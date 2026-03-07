@@ -436,14 +436,14 @@ def decode_message(data: bytes) -> Message:
                     msg.response.event_records = event_records
 
             elif intent_name in ("StoreBatchEvents", "StoreBatchEventsResponse"):
-                batch_records, ok = parse_store_batch_events_payload(msg)
+                batch_record, ok = parse_store_batch_events_payload(msg)
                 if ok:
-                    msg.response.store_batch_event_records = batch_records
+                    msg.response.store_batch_event_record = batch_record
 
             elif intent_name in ("StoreBatchLinks", "StoreBatchLinksResponse"):
-                link_records, ok = parse_link_event_batch_payload(msg)
+                link_record, ok = parse_link_event_batch_payload(msg)
                 if ok:
-                    msg.response.store_link_batch_event_records = link_records
+                    msg.response.store_link_batch_event_record = link_record
 
             # Other response types (StoreBatchTags, UpdateBatchTags, StoreEvent, LinkEvent, UnlinkEvent)
             # use only header fields, no payload parsing needed

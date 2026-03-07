@@ -73,6 +73,8 @@ class EventFields:
     tags: list["TagOutput"] = field(default_factory=list)  # Tags for the event
     links: list["LinkFields"] = field(default_factory=list)  # Links for the event
     payload_data: Optional["PayloadFields"] = None  # Payload data
+    status: str = ""  # Status of the event; used in StoreBatchEvents response
+    hits: int = 0  # Total search term match hits (from GetEventsForTags response)
 
 
 @dataclass(slots=True)
@@ -175,6 +177,9 @@ class LinkFields:
     owner_unique_id: str = ""  # Owner unique ID (developer-provided unique ID)
     tags: list["TagOutput"] = field(default_factory=list)  # Tags for this link
     target_tags: list["TagOutput"] = field(default_factory=list)  # Tags for target
+    status: str = ""  # Status of the link; used in StoreBatchLinks response
+    message: str = ""  # Message of the link; used in StoreBatchLinks response
+    link_error_code: int | None = None  # Error code for link operations; used in StoreBatchLinks response
 
 
 @dataclass(slots=True)
@@ -214,12 +219,8 @@ class ResponseFields:
     storage_error_count: int = 0  # Number of storage errors
     storage_success_count: int = 0  # Number of successfully stored events
     event_records: list["EventFields"] = field(default_factory=list)  # Parsed events
-    store_link_batch_event_records: list["StoreLinkBatchEventRecord"] = field(
-        default_factory=list
-    )  # Link batch results
-    store_batch_event_records: list["StoreBatchEventRecord"] = field(
-        default_factory=list
-    )  # Batch event results
+    store_link_batch_event_record: Optional["StoreLinkBatchEventRecord"] = None  # Link batch results
+    store_batch_event_record: Optional["StoreBatchEventRecord"] = None  # Batch event results
     match_term_count: int = 0  # Number of matching tag values
     is_buffered: bool = False  # Whether response is buffered
     brief_hits: list["BriefHitRecord"] = field(default_factory=list)  # Brief hit records
@@ -231,11 +232,8 @@ class StoreBatchEventRecord:
 
     status: str = ""
     message: str = ""
-    hits: int = 0  # Total search term match hits
-    link_count: int = 0  # Total links found
-    match_term_count: int = 0  # Number of matching terms
-    tag_hits: int = 0  # Hits for each matching tag value
-    event_fields: EventFields | None = None
+    event_count: int = 0  # Total number of Events stored
+    event_results: list["EventFields"] = field(default_factory=list)  # Event results
 
 
 @dataclass(slots=True)
@@ -244,8 +242,10 @@ class StoreLinkBatchEventRecord:
 
     status: str = ""
     message: str = ""
-    link_error_code: int | None = None
-    link_fields: LinkFields | None = None
+    total_link_requests_found: int = 0  # Total link requests found
+    links_ok: int = 0  # Number of links successfully stored
+    links_with_errors: int = 0  # Number of links with errors
+    link_results: list["LinkFields"] = field(default_factory=list)  # Link results
 
 
 @dataclass(slots=True)
@@ -381,6 +381,9 @@ class TagOutput:
     category: str = ""
     key: str = ""
     value: str = ""
+    owner: str = ""
+    timestamp: str = ""
+    target_tag_id: str = ""  # ID of the target tag
 
 
 @dataclass(slots=True)

@@ -127,21 +127,13 @@ def format_batch_events_payload(events: list["BatchEventSpec"]) -> str:
         if event.type:
             fields.append(f"type={event.type}")
 
-        # Append tags to each event line if present
+        # Append tags to each event line if present.
+        # Format matches Go: tag_{i}={frequency}:{key}={value}
         if spec.tags:
-            for tag in spec.tags:
+            for i, tag in enumerate(spec.tags):
                 tag_value = serialize_tag_value(tag.value)
-                if tag.key:
-                    # Key=value format
-                    tag_str = f"{tag.key}={tag_value}"
-                else:
-                    # Value only
-                    tag_str = tag_value
-
-                if tag.frequency and tag.frequency > 1:
-                    fields.append(f"tag:{tag.frequency}:{tag_str}")
-                else:
-                    fields.append(f"tag:{tag_str}")
+                tag_str = f"{tag.key}={tag_value}" if tag.key else tag_value
+                fields.append(f"tag_{i}={tag.frequency}:{tag_str}")
 
         lines.append("\t".join(fields))
 
@@ -193,8 +185,7 @@ def format_batch_link_events_payload(events: list["BatchLinkEventSpec"]) -> str:
         if event.local_id:
             fields.append(f"local_id={event.local_id}")
         if event.owner:
-            # fields.append(f"owner={event.owner}")
-            pass
+            fields.append(f"owner={event.owner}")
         if event.owner_unique_id:
             fields.append(f"owner_unique_id={event.owner_unique_id}")
         if event.timestamp:
@@ -272,38 +263,44 @@ def _payload_to_bytes(msg: "Message", intent_name: str) -> bytes:
         return b""
 
     if intent_name == "StoreBatchEvents":
-        if payload_data is None or payload_data == []:
-            return b""
-        if isinstance(payload_data, list) and all(
-            isinstance(x, BatchEventSpec) for x in payload_data
-        ):
-            return format_batch_events_payload(payload_data).encode("utf-8")
-        if isinstance(payload_data, str):
-            return payload_data.encode("utf-8")
-        if isinstance(payload_data, list) and all(
-            isinstance(x, str) for x in payload_data
-        ):
-            return "".join(payload_data).encode("utf-8")
-        raise EncodeError(
-            "StoreBatchEvents requires payload.data to be a list of BatchEventSpec, str, or list[str]",
-            field="PayloadData",
-            code=EncodeErrorCode.ENCODE_BATCH_PAYLOAD_FAILED,
-        )
+        if payload_data is not None and payload_data != []:
+            if isinstance(payload_data, list) and all(
+                isinstance(x, BatchEventSpec) for x in payload_data
+            ):
+                return format_batch_events_payload(payload_data).encode("utf-8")
+            if isinstance(payload_data, str):
+                return payload_data.encode("utf-8")
+            if isinstance(payload_data, list) and all(
+                isinstance(x, str) for x in payload_data
+            ):
+                return "".join(payload_data).encode("utf-8")
+            raise EncodeError(
+                "StoreBatchEvents requires payload.data to be a list of BatchEventSpec, str, or list[str]",
+                field="PayloadData",
+                code=EncodeErrorCode.ENCODE_BATCH_PAYLOAD_FAILED,
+            )
+        # Fall back to neural_memory.batch_events
+        if msg.neural_memory and msg.neural_memory.batch_events:
+            return format_batch_events_payload(msg.neural_memory.batch_events).encode("utf-8")
+        return b""
 
     if intent_name == "StoreBatchLinks":
-        if payload_data is None or payload_data == []:
-            return b""
-        if isinstance(payload_data, list) and all(
-            isinstance(x, BatchLinkEventSpec) for x in payload_data
-        ):
-            return format_batch_link_events_payload(payload_data).encode("utf-8")
-        if isinstance(payload_data, str):
-            return payload_data.encode("utf-8")
-        raise EncodeError(
-            "StoreBatchLinks requires payload.data to be a list of BatchLinkEventSpec or str",
-            field="PayloadData",
-            code=EncodeErrorCode.ENCODE_BATCH_PAYLOAD_FAILED,
-        )
+        if payload_data is not None and payload_data != []:
+            if isinstance(payload_data, list) and all(
+                isinstance(x, BatchLinkEventSpec) for x in payload_data
+            ):
+                return format_batch_link_events_payload(payload_data).encode("utf-8")
+            if isinstance(payload_data, str):
+                return payload_data.encode("utf-8")
+            raise EncodeError(
+                "StoreBatchLinks requires payload.data to be a list of BatchLinkEventSpec or str",
+                field="PayloadData",
+                code=EncodeErrorCode.ENCODE_BATCH_PAYLOAD_FAILED,
+            )
+        # Fall back to neural_memory.batch_links
+        if msg.neural_memory and msg.neural_memory.batch_links:
+            return format_batch_link_events_payload(msg.neural_memory.batch_links).encode("utf-8")
+        return b""
 
     if intent_name in ("StoreBatchTags", "UpdateBatchTags"):
         if msg.payload is not None and msg.payload.data is not None:

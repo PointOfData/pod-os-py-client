@@ -129,16 +129,17 @@ def test_parse_store_batch_events_payload():
             "_status=ERROR\t_msg=Failed\tevent_id=evt2"
         )
     )
-    
-    records, ok = parse_store_batch_events_payload(msg)
-    
+
+    record, ok = parse_store_batch_events_payload(msg)
+
     assert ok
-    assert len(records) == 2
-    assert records[0].status == "OK"
-    assert records[0].message == "Success"
-    assert records[0].event_fields.id == "evt1"
-    assert records[1].status == "ERROR"
-    assert records[1].message == "Failed"
+    assert record is not None
+    assert len(record.event_results) == 2
+    assert record.event_results[0].status == "OK"
+    assert record.event_results[0].id == "evt1"
+    assert record.event_results[0].unique_id == "uuid1"
+    assert record.event_results[1].status == "ERROR"
+    assert record.event_results[1].id == "evt2"
 
 
 def test_parse_link_event_batch_payload():
@@ -150,19 +151,21 @@ def test_parse_link_event_batch_payload():
             "event_id_a=evt1\tevent_id_b=evt2\tstrength_a=1.0\tstrength_b=0.5\tcategory=test"
         )
     )
-    
-    records, ok = parse_link_event_batch_payload(msg)
-    
+
+    record, ok = parse_link_event_batch_payload(msg)
+
     assert ok
-    assert len(records) == 1
-    assert records[0].status == "OK"
-    assert records[0].message == "Success"
-    assert records[0].link_error_code is None
-    assert records[0].link_fields.id == "link1"
-    assert records[0].link_fields.event_a == "evt1"
-    assert records[0].link_fields.event_b == "evt2"
-    assert records[0].link_fields.strength_a == 1.0
-    assert records[0].link_fields.strength_b == 0.5
+    assert record is not None
+    assert len(record.link_results) == 1
+    link = record.link_results[0]
+    assert link.status == "OK"
+    assert link.message == "Success"
+    assert link.link_error_code is None
+    assert link.id == "link1"
+    assert link.event_a == "evt1"
+    assert link.event_b == "evt2"
+    assert link.strength_a == 1.0
+    assert link.strength_b == 0.5
 
 
 def test_parse_link_event_batch_payload_with_error_code():
@@ -180,20 +183,22 @@ def test_parse_link_event_batch_payload_with_error_code():
         )
     )
 
-    records, ok = parse_link_event_batch_payload(msg)
+    record, ok = parse_link_event_batch_payload(msg)
 
     assert ok
-    assert len(records) == 1
-    assert records[0].status == "ERROR"
-    assert records[0].message == "CANNOT CREATE LINK"
-    assert records[0].link_error_code == -2
-    assert records[0].link_fields.unique_id == "wikipedia:relation:wikipedia_entity_1_6935_wikipedia_entity_3_8175_2"
-    assert records[0].link_fields.unique_id_a == "wikipedia:entity:wikipedia_entity_1_6935"
-    assert records[0].link_fields.unique_id_b == "wikipedia:entity:wikipedia_entity_3_8175"
-    assert records[0].link_fields.strength_a == 0.8
-    assert records[0].link_fields.strength_b == 0.0
-    assert records[0].link_fields.category == "is listened to by"
-    assert records[0].link_fields.owner_unique_id == "b627d6f5-eeb9-4203-be19-552b9b9210b8"
+    assert record is not None
+    assert len(record.link_results) == 1
+    link = record.link_results[0]
+    assert link.status == "ERROR"
+    assert link.message == "CANNOT CREATE LINK"
+    assert link.link_error_code == -2
+    assert link.unique_id == "wikipedia:relation:wikipedia_entity_1_6935_wikipedia_entity_3_8175_2"
+    assert link.unique_id_a == "wikipedia:entity:wikipedia_entity_1_6935"
+    assert link.unique_id_b == "wikipedia:entity:wikipedia_entity_3_8175"
+    assert link.strength_a == 0.8
+    assert link.strength_b == 0.0
+    assert link.category == "is listened to by"
+    assert link.owner_unique_id == "b627d6f5-eeb9-4203-be19-552b9b9210b8"
 
 
 def test_parse_empty_payload():

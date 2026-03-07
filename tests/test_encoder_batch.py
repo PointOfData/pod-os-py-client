@@ -118,8 +118,8 @@ def test_format_batch_events_payload_with_tags():
     result = format_batch_events_payload([spec])
     
     assert "unique_id=uuid1" in result
-    assert "tag:category=important" in result
-    assert "tag:2:status=active" in result
+    assert "tag_0=1:category=important" in result
+    assert "tag_1=2:status=active" in result
 
 
 def test_format_batch_events_payload_multiple():
@@ -214,14 +214,14 @@ def test_format_batch_link_events_payload_with_owner():
         strength_a=1.0,
         strength_b=1.0,
         owner_unique_id="owner_uuid",
-        owner_id="owner_id",
+        owner_event_id="owner_event_id_val",
     )
     spec = BatchLinkEventSpec(event=event, link=link)
     
     result = format_batch_link_events_payload([spec])
     
-    assert "link_owner_unique_id=owner_uuid" in result
-    assert "link_owner_id=owner_id" in result
+    assert "owner_unique_id=owner_uuid" in result
+    assert "owner_event_id=owner_event_id_val" in result
 
 
 def test_format_batch_events_payload_tag_without_key():
@@ -232,7 +232,7 @@ def test_format_batch_events_payload_tag_without_key():
     
     result = format_batch_events_payload([spec])
     
-    assert "tag:simple_value" in result
+    assert "tag_0=1:simple_value" in result
 
 
 def test_format_batch_events_payload_complex_tag_value():

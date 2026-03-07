@@ -796,19 +796,27 @@ def _parse_get_event_target_tag_line(line: str) -> tuple[str, TagOutput | None]:
     return target_event_id, tag
 
 
-def parse_store_batch_events_payload(msg: Message) -> tuple[list[StoreBatchEventRecord], bool]:
+def parse_store_batch_events_payload(msg: Message) -> tuple[StoreBatchEventRecord | None, bool]:
     """Parse the payload for StoreBatchEvents response.
+
+    Returns a single StoreBatchEventRecord containing all individual event results
+    in its event_results list, matching Go's StoreBatchEventRecord structure.
 
     Args:
         msg: Message with payload to parse
 
     Returns:
-        Tuple of (storage results list, success bool)
+        Tuple of (StoreBatchEventRecord or None, success bool)
     """
     if not msg.payload or not isinstance(msg.payload.data, str):
-        return [], False
+        return None, False
 
-    results: list[StoreBatchEventRecord] = []
+    record = StoreBatchEventRecord(
+        status=msg.response.status if msg.response else "",
+        message=msg.response.message if msg.response else "",
+        event_count=msg.response.total_events if msg.response else 0,
+    )
+
     lines = msg.payload.data.split("\n")
 
     for line in lines:
@@ -819,23 +827,22 @@ def parse_store_batch_events_payload(msg: Message) -> tuple[list[StoreBatchEvent
         # Parse each line as tab-separated key=value pairs
         record_map = _parse_tab_delimited_line(line)
 
-        # Create storage record
-        record = StoreBatchEventRecord(
-            status=record_map.get("_status", ""),
-            message=record_map.get("_msg", ""),
-        )
-
-        # Extract Event fields
+        # Extract Event fields from each line
         event = _decode_event_fields(record_map)
-        record.event_fields = event
+        # Capture per-event status if present
+        if "_status" in record_map:
+            event.status = record_map["_status"]
 
-        results.append(record)
+        record.event_results.append(event)
 
-    return results, True
+    return record, True
 
 
-def parse_link_event_batch_payload(msg: Message) -> tuple[list[StoreLinkBatchEventRecord], bool]:
+def parse_link_event_batch_payload(msg: Message) -> tuple[StoreLinkBatchEventRecord | None, bool]:
     """Parse the payload for StoreBatchLinks response.
+
+    Returns a single StoreLinkBatchEventRecord containing all link results
+    in its link_results list, matching Go's StoreLinkBatchEventRecord structure.
 
     Payload format: newline-terminated records of tab-delimited fields.
 
@@ -843,12 +850,19 @@ def parse_link_event_batch_payload(msg: Message) -> tuple[list[StoreLinkBatchEve
         msg: Message with payload to parse
 
     Returns:
-        Tuple of (link storage results list, success bool)
+        Tuple of (StoreLinkBatchEventRecord or None, success bool)
     """
     if not msg.payload or not isinstance(msg.payload.data, str):
-        return [], False
+        return None, False
 
-    results: list[StoreLinkBatchEventRecord] = []
+    record = StoreLinkBatchEventRecord(
+        status=msg.response.status if msg.response else "",
+        message=msg.response.message if msg.response else "",
+        total_link_requests_found=msg.response.total_events if msg.response else 0,
+        links_ok=msg.response.storage_success_count if msg.response else 0,
+        links_with_errors=msg.response.storage_error_count if msg.response else 0,
+    )
+
     lines = msg.payload.data.split("\n")
 
     for line in lines:
@@ -858,20 +872,6 @@ def parse_link_event_batch_payload(msg: Message) -> tuple[list[StoreLinkBatchEve
 
         # Parse each line as tab-separated key=value pairs
         record_map = _parse_tab_delimited_line(line)
-
-        # Create link record
-        link_error_code: int | None = None
-        if "_link_error_code" in record_map:
-            try:
-                link_error_code = int(record_map["_link_error_code"])
-            except ValueError:
-                pass
-
-        record = StoreLinkBatchEventRecord(
-            status=record_map.get("_status", ""),
-            message=record_map.get("_status_info") or record_map.get("_msg", ""),
-            link_error_code=link_error_code,
-        )
 
         # Parse all LinkFields
         link = LinkFields()
@@ -921,7 +921,17 @@ def parse_link_event_batch_payload(msg: Message) -> tuple[list[StoreLinkBatchEve
         # Category
         link.category = record_map.get("category", "")
 
-        record.link_fields = link
-        results.append(record)
+        # Per-link status/message
+        link.status = record_map.get("_status", "")
+        link.message = record_map.get("_status_info") or record_map.get("_msg", "")
 
-    return results, True
+        # Per-link error code
+        if "_link_error_code" in record_map:
+            try:
+                link.link_error_code = int(record_map["_link_error_code"])
+            except ValueError:
+                pass
+
+        record.link_results.append(link)
+
+    return record, True

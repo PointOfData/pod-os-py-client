@@ -13,6 +13,15 @@ from pod_os_client.message.header import construct_header
 from pod_os_client.message.intents import Intent
 from pod_os_client.message.types import Envelope, EventFields, Message
 from pod_os_client.message.utils import get_timestamp, get_timestamp_from_datetime
+from pod_os_client.message.validate import (
+    ValidationError,
+    ValidationErrors,
+    explain_validation_errors,
+    format_validation_errors,
+    validate_message,
+    validate_raw_message,
+    validation_errors_to_llm_json,
+)
 
 __all__ = [
     "Message",
@@ -29,4 +38,12 @@ __all__ = [
     "format_batch_events_payload",
     "format_batch_link_events_payload",
     "format_batch_tags_payload",
+    # Validation
+    "ValidationError",
+    "ValidationErrors",
+    "validate_message",
+    "validate_raw_message",
+    "format_validation_errors",
+    "validation_errors_to_llm_json",
+    "explain_validation_errors",
 ]

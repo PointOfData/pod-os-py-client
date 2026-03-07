@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING
 
+from pod_os_client.message.utils import get_timestamp
+
 if TYPE_CHECKING:
     from pod_os_client.message.intents import Intent
     from pod_os_client.message.types import Message
@@ -94,28 +96,12 @@ def _actor_echo_header(msg: "Message") -> str:
 
 def _actor_request_header(msg: "Message") -> str:
     """Construct Actor Request header."""
-    parts = []
-    
-    # Envelope fields
+    parts = ["_type=status"]
+
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
-    
-    # Event fields
-    if msg.event:
-        if msg.event.unique_id:
-            parts.append(f"unique_id={msg.event.unique_id}")
-        if msg.event.type:
-            parts.append(f"type={msg.event.type}")
-        if msg.event.owner:
-            parts.append(f"owner={msg.event.owner}")
-        if msg.event.timestamp:
-            parts.append(f"timestamp={msg.event.timestamp}")
-        if msg.event.location:
-            parts.append(f"loc={msg.event.location}")
-        if msg.event.location_separator:
-            parts.append(f"loc_delim={msg.event.location_separator}")
-    
-    return "\t".join(parts) if parts else ""
+
+    return "\t".join(parts)
 
 
 def _actor_response_header(msg: "Message") -> str:
@@ -201,12 +187,27 @@ def _store_event_message_header(msg: "Message") -> str:
             parts.append(f"owner={msg.event.owner}")
         if msg.event.timestamp:
             parts.append(f"timestamp={msg.event.timestamp}")
-        if msg.event.location:
-            parts.append(f"loc={msg.event.location}")
-        if msg.event.location_separator:
-            parts.append(f"loc_delim={msg.event.location_separator}")
+        else:
+            parts.append(f"timestamp={get_timestamp()}")
+
+        parts.append(f"loc_delim={msg.event.location_separator}")
+        parts.append(f"loc={msg.event.location}")
+
         if msg.event.type:
             parts.append(f"type={msg.event.type}")
+        else:
+            parts.append("type=store event")
+
+        mime = msg.payload.mime_type if msg.payload else ""
+        parts.append(f"mime={mime}")
+
+        # Tags from neural_memory.tags
+        if msg.neural_memory and msg.neural_memory.tags:
+            from pod_os_client.message.encoder import serialize_tag_value
+            for i, tag in enumerate(msg.neural_memory.tags):
+                tag_name = f"tag_{i + 1:04d}"
+                tag_value = f"{tag.frequency}:{tag.key}={serialize_tag_value(tag.value)}"
+                parts.append(f"{tag_name}={tag_value}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
@@ -218,33 +219,46 @@ def _link_events_message_header(msg: "Message") -> str:
     """Construct Link Events message header."""
     parts = ["_db_cmd=link"]
 
-    if msg.neural_memory and msg.neural_memory.link:
-        link = msg.neural_memory.link
-        if link.unique_id_a:
-            parts.append(f"unique_id_a={link.unique_id_a}")
-        if link.unique_id_b:
-            parts.append(f"unique_id_b={link.unique_id_b}")
-        if link.event_a:
-            parts.append(f"event_id_a={_force_ascii(link.event_a)}")
-        if link.event_b:
-            parts.append(f"event_id_b={_force_ascii(link.event_b)}")
-        if link.strength_a:
-            parts.append(f"strength_a={link.strength_a}")
-        if link.strength_b:
-            parts.append(f"strength_b={link.strength_b}")
-        if link.category:
-            parts.append(f"category={link.category}")
-        if link.owner:
-            parts.append(f"owner={link.owner}")
-        if link.timestamp:
-            parts.append(f"timestamp={link.timestamp}")
-        if link.location:
-            parts.append(f"loc={link.location}")
-        if link.type:
-            parts.append(f"type={link.type}")
+    # Link creation event identifiers (from msg.event)
+    if msg.event:
+        if msg.event.id:
+            parts.append(f"event_id={_force_ascii(msg.event.id)}")
+        elif msg.event.unique_id:
+            parts.append(f"unique_id={msg.event.unique_id}")
+        if msg.event.owner:
+            parts.append(f"owner={msg.event.owner}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
+
+    if msg.neural_memory and msg.neural_memory.link:
+        link = msg.neural_memory.link
+
+        # Prefer UniqueIdA/B; otherwise use EventA/B
+        if link.unique_id_a and link.unique_id_b:
+            parts.append(f"unique_id_a={link.unique_id_a}")
+            parts.append(f"unique_id_b={link.unique_id_b}")
+        elif link.event_a and link.event_b:
+            parts.append(f"event_id_a={_force_ascii(link.event_a)}")
+            parts.append(f"event_id_b={_force_ascii(link.event_b)}")
+
+        # Always write strength, category, loc_delim, loc, type, mime, timestamp
+        parts.append(f"strength_a={link.strength_a}")
+        parts.append(f"strength_b={link.strength_b}")
+        parts.append(f"category={link.category}")
+        parts.append(f"loc_delim={link.location_separator}")
+        parts.append(f"loc={link.location}")
+        parts.append(f"type={link.type}")
+
+        mime = msg.payload.mime_type if msg.payload else ""
+        parts.append(f"mime={mime}")
+
+        parts.append(f"timestamp={link.timestamp}")
+
+        if link.owner_event_id:
+            parts.append(f"owner_event_id={link.owner_event_id}")
+        elif link.owner_unique_id:
+            parts.append(f"owner_unique_id={link.owner_unique_id}")
 
     return "\t".join(parts)
 
@@ -255,14 +269,18 @@ def _unlink_events_message_header(msg: "Message") -> str:
 
     if msg.neural_memory and msg.neural_memory.link:
         link = msg.neural_memory.link
-        if link.unique_id_a:
-            parts.append(f"unique_id_a={link.unique_id_a}")
-        if link.unique_id_b:
-            parts.append(f"unique_id_b={link.unique_id_b}")
-        if link.event_a:
-            parts.append(f"event_id_a={_force_ascii(link.event_a)}")
-        if link.event_b:
-            parts.append(f"event_id_b={_force_ascii(link.event_b)}")
+        if link.owner:
+            parts.append(f"owner={link.owner}")
+        if link.id:
+            parts.append(f"event_id={_force_ascii(link.id)}")
+        elif link.unique_id:
+            parts.append(f"unique_id={link.unique_id}")
+        if link.location_separator:
+            parts.append(f"loc_delim={link.location_separator}")
+        if link.location:
+            parts.append(f"loc={link.location}")
+        if link.timestamp:
+            parts.append(f"timestamp={link.timestamp}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
@@ -317,28 +335,33 @@ def _get_events_for_tag_message_header(msg: "Message") -> str:
     """Construct Get Events For Tag message header."""
     parts = ["_db_cmd=events_for_tag"]
 
-    if msg.neural_memory and msg.neural_memory.get_events_for_tags:
-        opts = msg.neural_memory.get_events_for_tags
-        if opts.event_pattern:
-            parts.append(f"event={opts.event_pattern}")
-        if opts.event_pattern_high:
-            parts.append(f"event_high={opts.event_pattern_high}")
+    buffer_results = False
+    include_tag_stats = False
+    invert_hit_tag_filter = False
+    hit_tag_filter = ""
+    buffer_format = "0"
+
+    opts = msg.neural_memory.get_events_for_tags if msg.neural_memory else None
+
+    if opts:
+        buffer_results = opts.buffer_results
+        include_tag_stats = opts.include_tag_stats
+        invert_hit_tag_filter = opts.invert_hit_tag_filter
+        hit_tag_filter = opts.hit_tag_filter
+        if opts.buffer_format:
+            buffer_format = opts.buffer_format
+
+    # Always write buffer_results (Y or N)
+    parts.append("buffer_results=Y" if buffer_results else "buffer_results=N")
+
+    if include_tag_stats:
+        parts.append("include_tag_stats=Y")
+
+    if opts:
         if opts.include_brief_hits:
             parts.append("include_brief_hits=Y")
         if opts.get_all_data:
             parts.append("get_all_data=Y")
-        if opts.first_link:
-            parts.append(f"first_link={opts.first_link}")
-        if opts.link_count:
-            parts.append(f"link_count={opts.link_count}")
-        if opts.events_per_message:
-            parts.append(f"events_per_message={opts.events_per_message}")
-        if opts.start_result:
-            parts.append(f"start_result={opts.start_result}")
-        if opts.end_result:
-            parts.append(f"end_result={opts.end_result}")
-        if opts.min_event_hits:
-            parts.append(f"min_event_hits={opts.min_event_hits}")
         if opts.count_only:
             parts.append("count_only=Y")
         if opts.get_match_links:
@@ -349,16 +372,41 @@ def _get_events_for_tag_message_header(msg: "Message") -> str:
             parts.append("get_link_tags=Y")
         if opts.get_target_tags:
             parts.append("get_target_tags=Y")
+        if invert_hit_tag_filter:
+            parts.append("invert_hit_tag_filter=Y")
+
+        if opts.event_pattern:
+            parts.append(f"event={_force_ascii(opts.event_pattern)}")
+        if opts.event_pattern_high:
+            parts.append(f"event_high={_force_ascii(opts.event_pattern_high)}")
+        if opts.link_tag_filter:
+            parts.append(f"link_tag_filter={_force_ascii(opts.link_tag_filter)}")
+        if opts.linked_events_filter:
+            parts.append(f"linked_events_tag_filter={_force_ascii(opts.linked_events_filter)}")
         if opts.link_category:
             parts.append(f"link_category={opts.link_category}")
         if opts.owner:
-            parts.append(f"owner={opts.owner}")
-        if opts.owner_unique_id:
+            parts.append(f"owner={_force_ascii(opts.owner)}")
+        elif opts.owner_unique_id:
             parts.append(f"owner_unique_id={opts.owner_unique_id}")
-        if opts.buffer_results:
-            parts.append("buffer_results=Y")
-        if opts.include_tag_stats:
-            parts.append("include_tag_stats=Y")
+        if hit_tag_filter:
+            parts.append(f"hit_tag_filter={_force_ascii(hit_tag_filter)}")
+
+        if opts.first_link > 0:
+            parts.append(f"first_link={opts.first_link}")
+        if opts.link_count > 0:
+            parts.append(f"link_count={opts.link_count}")
+        if opts.events_per_message != 0:
+            parts.append(f"events_per_message={opts.events_per_message}")
+        if opts.start_result > 0:
+            parts.append(f"start_result={opts.start_result}")
+        if opts.end_result > 0:
+            parts.append(f"end_result={opts.end_result}")
+        if opts.min_event_hits > 0:
+            parts.append(f"min_event_hits={opts.min_event_hits}")
+
+    # Always write buffer_format (defaults to "0")
+    parts.append(f"buffer_format={buffer_format}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
@@ -381,10 +429,15 @@ def _store_batch_tags_message_header(msg: "Message") -> str:
     parts = ["_db_cmd=tag_store_batch"]
 
     if msg.event:
-        if msg.event.id:
-            parts.append(f"event_id={_force_ascii(msg.event.id)}")
-        elif msg.event.unique_id:
+        if msg.event.unique_id:
             parts.append(f"unique_id={msg.event.unique_id}")
+        elif msg.event.id:
+            parts.append(f"event_id={_force_ascii(msg.event.id)}")
+
+        if msg.event.owner:
+            parts.append(f"owner={msg.event.owner}")
+        elif msg.event.owner_unique_id:
+            parts.append(f"owner_unique_id={msg.event.owner_unique_id}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
