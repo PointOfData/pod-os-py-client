@@ -34,6 +34,8 @@ def construct_header(msg: "Message", intent: "Intent", connection_id_uuid: str) 
         return _actor_echo_header(msg)
     elif intent_name == "StoreEvent":
         return _store_event_message_header(msg)
+    elif intent_name == "StoreData":
+        return _store_data_message_header(msg)
     elif intent_name == "LinkEvent":
         return _link_events_message_header(msg)
     elif intent_name == "UnlinkEvent":
@@ -208,6 +210,41 @@ def _store_event_message_header(msg: "Message") -> str:
                 tag_name = f"tag_{i + 1:04d}"
                 tag_value = f"{tag.frequency}:{tag.key}={serialize_tag_value(tag.value)}"
                 parts.append(f"{tag_name}={tag_value}")
+
+    if msg.message_id:
+        parts.append(f"_msg_id={msg.message_id}")
+
+    return "\t".join(parts)
+
+
+def _store_data_message_header(msg: "Message") -> str:
+    """Construct Store Data message header.
+
+    Stores data directly in the Neural Memory database. Unlike StoreEvent,
+    this intent does not include tags. Required fields: Event.unique_id OR
+    Event.id, Event.timestamp, Event.location, Event.location_separator,
+    Payload.data, Payload.mime_type.
+    """
+    parts = ["_db_cmd=store_data"]
+
+    if msg.event:
+        if msg.event.unique_id:
+            parts.append(f"unique_id={msg.event.unique_id}")
+        elif msg.event.id:
+            parts.append(f"event_id={_force_ascii(msg.event.id)}")
+        if msg.event.timestamp:
+            parts.append(f"timestamp={msg.event.timestamp}")
+        else:
+            parts.append(f"timestamp={get_timestamp()}")
+        parts.append(f"loc_delim={msg.event.location_separator}")
+        parts.append(f"loc={msg.event.location}")
+    else:
+        parts.append(f"timestamp={get_timestamp()}")
+        parts.append("loc_delim=|")
+        parts.append("loc=")
+
+    mime = msg.payload.mime_type if msg.payload else ""
+    parts.append(f"mime={mime}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")

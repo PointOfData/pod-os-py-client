@@ -144,7 +144,7 @@ batch_msg = Message(
 )
 response = await client.send_message(batch_msg)
 
-# StoreBatchTags / UpdateBatchTags: pass list of Tag in payload.data or neural_memory.tags
+# StoreBatchTags: pass list of Tag in payload.data or neural_memory.tags
 tag_msg = Message(
     to="mem@gateway",
     from_="client@gateway",
@@ -156,7 +156,29 @@ tag_msg = Message(
 )
 ```
 
-Other intents (e.g. StoreEvent, GetEvent, GetEventsForTags) use `PayloadFields(data=...)` with `str`, `bytes`, or `list[str]` as appropriate.
+Other intents (e.g. StoreEvent, StoreData, GetEvent, GetEventsForTags) use `PayloadFields(data=...)` with `str`, `bytes`, or `list[str]` as appropriate.
+
+`StoreData` stores raw payload data associated with a unique identifier, timestamp, and location (no tags):
+
+```python
+from uuid import uuid4
+
+data_msg = Message(
+    to="mem@gateway",
+    from_="client@gateway",
+    intent=IntentType.StoreData.name,
+    client_name="client",
+    message_id=str(uuid4()),
+    event=EventFields(
+        unique_id=str(uuid4()),
+        timestamp=get_timestamp(),
+        location="TERRA|47.619463|-122.518691",
+        location_separator="|",
+    ),
+    payload=PayloadFields(data=b"binary or text content", mime_type="application/octet-stream"),
+)
+response = await client.send_message(data_msg)
+```
 
 ## Performance Optimization
 

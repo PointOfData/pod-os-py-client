@@ -445,7 +445,7 @@ def decode_message(data: bytes) -> Message:
                 if ok:
                     msg.response.store_link_batch_event_record = link_record
 
-            # Other response types (StoreBatchTags, UpdateBatchTags, StoreEvent, LinkEvent, UnlinkEvent)
+            # Other response types (StoreBatchTags, StoreEvent, LinkEvent, UnlinkEvent)
             # use only header fields, no payload parsing needed
 
     return msg

@@ -20,110 +20,127 @@ class _IntentTypes:
 
     # Neural Memory Request intents
     StoreEvent = Intent(
+        # StoreEvent is used to store a single Event Object in a Neural Memory database.
         name="StoreEvent",
         neural_memory_command="store",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
+    StoreData = Intent(
+        #StoreData is used to update a new Payload data in an *existing* Event Object identified by UniqueId or Id. When invoked, the previous Data Payload is overwritten.
+        name="StoreData",
+        neural_memory_command="store_data",
+        message_type=1000,
+        routing_message_type="MEM_REQ",
+    )
     StoreBatchEvents = Intent(
+        # StoreBatchEvents is used to store a batch of Event Objects (including tags) in a Neural Memory database.
         name="StoreBatchEvents",
         neural_memory_command="store_batch",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     StoreBatchTags = Intent(
+        #StoreBatchTags is used to store a batch of tag objects in an existing Event Object in a Neural Memory database. Also covers the update use case.
         name="StoreBatchTags",
         neural_memory_command="tag_store_batch",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     GetEvent = Intent(
+        # GetEvent is used to retrieve a single Event Object from a Neural Memory database. Use GetTags=true to retrieve tags for the event.
         name="GetEvent",
         neural_memory_command="get",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     GetEventsForTags = Intent(
+        # GetEventsForTags is used to retrieve a batch of Event Objects from a Neural Memory database by searching for Tags matching the specified pattern.
         name="GetEventsForTags",
         neural_memory_command="events_for_tag",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     LinkEvent = Intent(
+        # LinkEvent is used to link two Event Objects in a Neural Memory database. It is also an Event Object itself.
         name="LinkEvent",
         neural_memory_command="link",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     UnlinkEvent = Intent(
+        # UnlinkEvent is used to unlink two Event Objects in a Neural Memory database.
         name="UnlinkEvent",
         neural_memory_command="unlink",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     StoreBatchLinks = Intent(
+        # StoreBatchLinks is used to store a batch of Link Objects in a Neural Memory database.
         name="StoreBatchLinks",
         neural_memory_command="link_batch",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
-    UpdateBatchTags = Intent(
-        name="UpdateBatchTags",
-        neural_memory_command="tag_update_batch",
-        message_type=1000,
-        routing_message_type="MEM_REQ",
-    )
-
     # Neural Memory Response intents
     StoreEventResponse = Intent(
+        # StoreEventResponse is used to confirm the storage of a single Event Object in a Neural Memory database.
         name="StoreEventResponse",
         neural_memory_command="store",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
+    StoreDataResponse = Intent(
+        # StoreDataResponse is used to confirm the storage of a new Payload data in an *existing* Event Object identified by UniqueId or Id. When invoked, the previous Data Payload is overwritten.
+        name="StoreDataResponse",
+        neural_memory_command="store_data",
+        message_type=1001,
+        routing_message_type="MEM_REPLY",
+    )
     StoreBatchEventsResponse = Intent(
+        # StoreBatchEventsResponse is used to confirm the storage of a batch of Event Objects (including tags) in a Neural Memory database.
         name="StoreBatchEventsResponse",
         neural_memory_command="store_batch",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     StoreBatchTagsResponse = Intent(
+        # StoreBatchTagsResponse is used to confirm the storage of a batch of tag objects (associated with an existing Event Object) in a Neural Memory database.
         name="StoreBatchTagsResponse",
         neural_memory_command="tag_store_batch",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
-    UpdateBatchTagsResponse = Intent(
-        name="UpdateBatchTagsResponse",
-        neural_memory_command="tag_update_batch",
-        message_type=1001,
-        routing_message_type="MEM_REPLY",
-    )
     GetEventResponse = Intent(
+        # GetEventResponse is used to confirm the retrieval of a single Event Object from a Neural Memory database
         name="GetEventResponse",
         neural_memory_command="get",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     GetEventsForTagsResponse = Intent(
+        # GetEventsForTagsResponse is used to confirm the retrieval of a batch of Event Objects from a Neural Memory database by searching for Tags.
         name="GetEventsForTagsResponse",
         neural_memory_command="events_for_tag",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     LinkEventResponse = Intent(
+        # LinkEventResponse is used to link two Event Objects in a Neural Memory database. It is also an Event Object itself.
         name="LinkEventResponse",
         neural_memory_command="link",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     UnlinkEventResponse = Intent(
+        # UnlinkEventResponse is used to unlink two Event Objects in a Neural Memory database.
         name="UnlinkEventResponse",
         neural_memory_command="unlink",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     StoreBatchLinksResponse = Intent(
+        # StoreBatchLinksResponse is used to store a batch of link objects in a Neural Memory database.
         name="StoreBatchLinksResponse",
         neural_memory_command="link_batch",
         message_type=1001,
@@ -131,74 +148,105 @@ class _IntentTypes:
     )
 
     # Gateway/Actor intents
+    # ActorEcho is used to echo a message from the Actor to the client.
     ActorEcho = Intent(name="ActorEcho", message_type=2, routing_message_type="ECHO")
+    # ActorHalt is used to halt the Actor.
     ActorHalt = Intent(name="ActorHalt", message_type=99, routing_message_type="HALT")
+    # ActorStart is used to start an Actor.
     ActorStart = Intent(name="ActorStart", message_type=1, routing_message_type="START")
+    # Status is used to communicate status; optionally rely on MessageId to identify the status.
     Status = Intent(name="Status", message_type=3, routing_message_type="STATUS")
+    # StatusRequest is used to request the status of an Actor.
     StatusRequest = Intent(
         name="StatusRequest", message_type=110, routing_message_type="STATUS_REQ"
     )
+    # ActorRequest is a request sent to an Actor.
     ActorRequest = Intent(name="ActorRequest", message_type=4, routing_message_type="REQUEST")
+    # ActorResponse is a response sent from an Actor in response to an ActorRequest.
     ActorResponse = Intent(name="ActorResponse", message_type=30, routing_message_type="REPLY")
+    # GatewayId is used by a client to identify the connection (required for all messages and connections) and establish client authentication and authorization.
     GatewayId = Intent(name="GatewayId", message_type=5, routing_message_type="ID")
+    # GatewayDisconnect is used to disconnect a client from a Gateway.
     GatewayDisconnect = Intent(
         name="GatewayDisconnect", message_type=6, routing_message_type="DISCONNECT"
     )
+    # GatewaySendNext is used to send the next message from the Actor to the client.
     GatewaySendNext = Intent(name="GatewaySendNext", message_type=7, routing_message_type="NEXT")
+    # GatewayNoSend is used to tell the Actor to not send the next message to the client.
     GatewayNoSend = Intent(name="GatewayNoSend", message_type=8, routing_message_type="NO_SEND")
+    # GatewayStreamOff is used to turn off the streaming of messages from the Actor to the client.
     GatewayStreamOff = Intent(
         name="GatewayStreamOff", message_type=9, routing_message_type="STREAM_OFF"
     )
+    # GatewayStreamOn is used to turn on the streaming of messages from the Actor to the client.
     GatewayStreamOn = Intent(
         name="GatewayStreamOn", message_type=10, routing_message_type="STREAM_ON"
     )
+    # ActorRecord is used to record a message from the client to the Actor.
     ActorRecord = Intent(name="ActorRecord", message_type=11, routing_message_type="RECORD")
+    # GatewayBatchStart is used to start a batch of messages from the client to the Actor.
     GatewayBatchStart = Intent(
         name="GatewayBatchStart", message_type=12, routing_message_type="BATCH_START"
     )
+    # GatewayBatchEnd is used to end a batch of messages from the client to the Actor.
     GatewayBatchEnd = Intent(
         name="GatewayBatchEnd", message_type=13, routing_message_type="BATCH_END"
     )
 
     # Queue intents
+    # QueueNextRequest is a request for the next queued message.
     QueueNextRequest = Intent(
         name="QueueNextRequest", message_type=14, routing_message_type="QUEUE_NEXT"
     )
+    # QueueAllRequest is a request for all queued messages.
     QueueAllRequest = Intent(
         name="QueueAllRequest", message_type=15, routing_message_type="QUEUE_ALL"
     )
+    # QueueCountRequest is a request for the count of queued messages.
     QueueCountRequest = Intent(
         name="QueueCountRequest", message_type=16, routing_message_type="QUEUE_COUNT"
     )
+    # QueueEmpty is sent in response to next message if the queue is empty (no more messages).
     QueueEmpty = Intent(name="QueueEmpty", message_type=17, routing_message_type="QUEUE_EMPTY")
+    # Keepalive is used for connection keepalive.
     Keepalive = Intent(name="Keepalive", message_type=18, routing_message_type="KEEPALIVE")
 
     # Report intents
+    # ActorReport is used to report the status of an Actor.
     ActorReport = Intent(name="ActorReport", message_type=19, routing_message_type="REPORT")
+    # ReportRequest is used to request a report.
     ReportRequest = Intent(
         name="ReportRequest", message_type=20, routing_message_type="REPORT_REQUEST"
     )
+    # InformationReport is an information report response.
     InformationReport = Intent(
         name="InformationReport", message_type=21, routing_message_type="INFO_REPORT"
     )
 
     # Auth intents
+    # AuthAddUser is used to add a user to the auth database.
     AuthAddUser = Intent(name="AuthAddUser", message_type=100, routing_message_type="AUTH_ADD_USER")
+    # AuthUpdateUser is used to update a user in the auth database.
     AuthUpdateUser = Intent(
         name="AuthUpdateUser", message_type=101, routing_message_type="AUTH_UPDATE_USER"
     )
+    # AuthUserList is used to request the user list from the auth database.
     AuthUserList = Intent(
         name="AuthUserList", message_type=102, routing_message_type="AUTH_USER_LIST"
     )
+    # AuthDisableUser is used to disable a user in the auth database.
     AuthDisableUser = Intent(
         name="AuthDisableUser", message_type=103, routing_message_type="AUTH_DISABLE_USER"
     )
 
     # User intent
+    # ActorUser is used for user-defined intents and messages. Any value at or above 65536 is a user intent.
     ActorUser = Intent(name="ActorUser", message_type=65536, routing_message_type="USER")
 
     # Routing intents
+    # RouteAnyMessage is used to match any kind of message.
     RouteAnyMessage = Intent(name="RouteAnyMessage", routing_message_type="ANY")
+    # RouteUserOnlyMessage is used to match only user-level messages.
     RouteUserOnlyMessage = Intent(name="RouteUserOnlyMessage", routing_message_type="USERONLY")
 
 
@@ -208,9 +256,9 @@ IntentType = _IntentTypes()
 # Mapping: NeuralMemoryCommand -> Request Intent
 _COMMAND_TO_INTENT: dict[str, Intent] = {
     "store": IntentType.StoreEvent,
+    "store_data": IntentType.StoreData,
     "store_batch": IntentType.StoreBatchEvents,
     "tag_store_batch": IntentType.StoreBatchTags,
-    "tag_update_batch": IntentType.UpdateBatchTags,
     "get": IntentType.GetEvent,
     "events_for_tag": IntentType.GetEventsForTags,
     "link": IntentType.LinkEvent,
@@ -221,9 +269,9 @@ _COMMAND_TO_INTENT: dict[str, Intent] = {
 # Mapping: NeuralMemoryCommand -> Response Intent
 _COMMAND_TO_RESPONSE_INTENT: dict[str, Intent] = {
     "store": IntentType.StoreEventResponse,
+    "store_data": IntentType.StoreDataResponse,
     "store_batch": IntentType.StoreBatchEventsResponse,
     "tag_store_batch": IntentType.StoreBatchTagsResponse,
-    "tag_update_batch": IntentType.UpdateBatchTagsResponse,
     "get": IntentType.GetEventResponse,
     "events_for_tag": IntentType.GetEventsForTagsResponse,
     "events_for_tags": IntentType.GetEventsForTagsResponse,  # Handle both variants

@@ -50,7 +50,7 @@ These are optional design patterns that can be used to create complex data struc
 
 ### Storing Events
 
-Events are stored as a single Event Object [StoreEvent Intent type] or as a batch of Event Objects [StoreBatchEvents Intent type].
+Events are stored as a single Event Object [StoreEvent Intent type] or as a batch of Event Objects [StoreBatchEvents Intent type]. Data can also be stored directly using the StoreData Intent which omits tags and is intended for associating raw payload data with a unique identifier, timestamp, and location.
 
 #### Rules
 
@@ -154,7 +154,7 @@ The formatted payload contains newline-terminated records. Each line is tab-sepa
 
 ### Storing Tags
 
-New Tags are stored with the Event [StoreEvent Intent type] or as a batch of Tags [StoreBatchTags Intent type]. Previously stored Tags update using [UpdateBatchTags Intent type]. Tags can be applied to any Event including Linking Events. An indexed tag may be up to 1,000 bytes in length and must be terminated by a null (zero) byte for purposes of storage and retrieval (internally, the zero byte is discarded). Tags have an associated frequency which is a positive, non-zero 64-bit integer. If an existing tag is re-stored with a negative frequency, it is considered inactive and will not be returned in subsequent searches. If a tag is stored with a frequency of zero, the Neural Memory DB service stores it outside of the index just as an attached value. Tags have no specific formatting requirements aside from the null byte termination. Tags may be "owned" by an event, in which case they can be found only via searches where the owner event ID is provided. This permits for "private" sets of tags to be associated with an event. Event ID "$sys" indicates that the tags are associated with the "system", and are therefore accessible to public searches where no owner is specified.
+New Tags are stored with the Event [StoreEvent Intent type] or as a batch of Tags [StoreBatchTags Intent type]. Tags can be applied to any Event including Linking Events. An indexed tag may be up to 1,000 bytes in length and must be terminated by a null (zero) byte for purposes of storage and retrieval (internally, the zero byte is discarded). Tags have an associated frequency which is a positive, non-zero 64-bit integer. If an existing tag is re-stored with a negative frequency, it is considered inactive and will not be returned in subsequent searches. If a tag is stored with a frequency of zero, the Neural Memory DB service stores it outside of the index just as an attached value. Tags have no specific formatting requirements aside from the null byte termination. Tags may be "owned" by an event, in which case they can be found only via searches where the owner event ID is provided. This permits for "private" sets of tags to be associated with an event. Event ID "$sys" indicates that the tags are associated with the "system", and are therefore accessible to public searches where no owner is specified.
 
 #### Rules
 
@@ -239,9 +239,38 @@ msg = Message(
 )
 ```
 
-#### Example: UpdateBatchTags (Python)
+### Storing Data
 
-Same structure as StoreBatchTags but with `IntentType.UpdateBatchTags.name`. Payload format: newline-terminated `frequency=tagvalue` or `frequency=key_name=key_value`.
+Data is stored directly in the Neural Memory database [StoreData Intent type]. Unlike StoreEvent, StoreData does not include tags. It is used for associating raw payload data with a unique identifier, timestamp, and location.
+
+#### Required fields:
+- Envelope: To, From, Intent
+- EventFields: unique_id OR id, timestamp, location, location_separator
+- PayloadFields: data, mime_type
+
+#### Example:
+```python
+from uuid import uuid4
+from pod_os_client.message.intents import IntentType
+from pod_os_client.message.types import EventFields, Message, PayloadFields
+from pod_os_client.message.utils import get_timestamp
+
+msg = Message(
+    to="mem@zeroth.example.com",
+    from_="MyClient@zeroth.example.com",
+    intent=IntentType.StoreData.name,
+    client_name="MyClient",
+    message_id=str(uuid4()),
+    event=EventFields(
+        unique_id=str(uuid4()),
+        timestamp=get_timestamp(),
+        location="TERRA|47.619463|-122.518691",
+        location_separator="|",
+    ),
+    payload=PayloadFields(data=b"binary or text content", mime_type="application/octet-stream"),
+)
+response = await client.send_message(msg)
+```
 
 ### Linking Events
 

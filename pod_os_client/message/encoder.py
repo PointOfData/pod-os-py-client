@@ -229,7 +229,7 @@ def format_batch_link_events_payload(events: list["BatchLinkEventSpec"]) -> str:
 
 
 def format_batch_tags_payload(tags: list[Tag]) -> str:
-    """Format a list of Tag into the payload format for StoreBatchTags and UpdateBatchTags.
+    """Format a list of Tag into the payload format for StoreBatchTags.
 
     Each tag is one line: frequency=key=value, where value is from serialize_tag_value.
     Lines are newline-separated with no trailing newline. Matches Go FormatBatchTagsPayload.
@@ -255,7 +255,7 @@ def _payload_to_bytes(msg: "Message", intent_name: str) -> bytes:
 
     StoreBatchEvents accepts list[BatchEventSpec], str, or list[str] (str/list[str] for backward compatibility).
     StoreBatchLinks accepts list[BatchLinkEventSpec] or str (str for backward compatibility).
-    StoreBatchTags/UpdateBatchTags accept list[Tag], str, or neural_memory.tags (str for backward compatibility).
+    StoreBatchTags accepts list[Tag], str, or neural_memory.tags (str for backward compatibility).
     """
     payload_data = msg.payload.data if msg.payload else None
 
@@ -302,7 +302,7 @@ def _payload_to_bytes(msg: "Message", intent_name: str) -> bytes:
             return format_batch_link_events_payload(msg.neural_memory.batch_links).encode("utf-8")
         return b""
 
-    if intent_name in ("StoreBatchTags", "UpdateBatchTags"):
+    if intent_name == "StoreBatchTags":
         if msg.payload is not None and msg.payload.data is not None:
             payload_data = msg.payload.data
             if isinstance(payload_data, list) and all(
@@ -312,7 +312,7 @@ def _payload_to_bytes(msg: "Message", intent_name: str) -> bytes:
             if isinstance(payload_data, str):
                 return payload_data.encode("utf-8")
             raise EncodeError(
-                "StoreBatchTags/UpdateBatchTags require payload.data to be a list of Tag, str (or use neural_memory.tags)",
+                "StoreBatchTags requires payload.data to be a list of Tag, str (or use neural_memory.tags)",
                 field="PayloadData",
                 code=EncodeErrorCode.ENCODE_BATCH_PAYLOAD_FAILED,
             )
@@ -339,10 +339,10 @@ def _payload_to_bytes(msg: "Message", intent_name: str) -> bytes:
 def encode_message(msg: "Message", intent: "Intent", conversation_uuid: str) -> bytes:
     """Encode a message to Pod-OS wire format.
 
-    For StoreBatchEvents, StoreBatchLinks, StoreBatchTags, and UpdateBatchTags the
-    encoder expects structured payloads only: list of BatchEventSpec, BatchLinkEventSpec,
-    or Tag respectively. For StoreBatchTags/UpdateBatchTags, tags may also be provided
-    via msg.neural_memory.tags when payload.data is empty.
+    For StoreBatchEvents, StoreBatchLinks, and StoreBatchTags the encoder expects
+    structured payloads only: list of BatchEventSpec, BatchLinkEventSpec, or Tag
+    respectively. For StoreBatchTags, tags may also be provided via
+    msg.neural_memory.tags when payload.data is empty.
 
     Wire format:
         - Total Length (9 bytes, hex with 'x' prefix): x00000000

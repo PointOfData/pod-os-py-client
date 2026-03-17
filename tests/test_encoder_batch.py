@@ -402,19 +402,6 @@ def test_encode_store_batch_tags_from_payload_data():
     assert encoded.endswith(expected_body)
 
 
-def test_encode_update_batch_tags_from_neural_memory():
-    """UpdateBatchTags with neural_memory.tags (no payload.data) uses neural_memory.tags."""
-    tags = [Tag(frequency=1, key="cat", value="val")]
-    msg = _minimal_message(
-        intent=IntentType.UpdateBatchTags.name,
-        payload=PayloadFields(data=None),
-        neural_memory=NeuralMemoryFields(tags=tags),
-    )
-    encoded = encode_message(msg, IntentType.UpdateBatchTags, "conv-1")
-    expected_body = format_batch_tags_payload(tags).encode("utf-8")
-    assert encoded.endswith(expected_body)
-
-
 def test_encode_store_batch_tags_string_payload():
     """StoreBatchTags with str payload (backward compat) encodes as UTF-8."""
     msg = _minimal_message(
@@ -425,23 +412,13 @@ def test_encode_store_batch_tags_string_payload():
     assert encoded.endswith("1=k1=v1\n2=k2=v2".encode("utf-8"))
 
 
-def test_encode_update_batch_tags_string_payload():
-    """UpdateBatchTags with str payload (backward compat) encodes as UTF-8."""
-    msg = _minimal_message(
-        intent=IntentType.UpdateBatchTags.name,
-        payload=PayloadFields(data="1=key=value"),
-    )
-    encoded = encode_message(msg, IntentType.UpdateBatchTags, "conv-1")
-    assert encoded.endswith("1=key=value".encode("utf-8"))
-
-
 def test_encode_store_batch_tags_wrong_payload_type_raises():
     """StoreBatchTags with payload that is not list[Tag] or str raises EncodeError."""
     msg = _minimal_message(
         intent=IntentType.StoreBatchTags.name,
         payload=PayloadFields(data=42),
     )
-    with pytest.raises(EncodeError, match="StoreBatchTags/UpdateBatchTags require"):
+    with pytest.raises(EncodeError, match="StoreBatchTags requires"):
         encode_message(msg, IntentType.StoreBatchTags, "conv-1")
 
 
