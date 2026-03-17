@@ -1,6 +1,6 @@
 """Pod-OS Python Client.
 
-High-performance Python client library for Pod-OS Actor system with Neural Memory support.
+High-performance Python client library for Pod-OS Actor system with Evolutionary Neural Memory support.
 """
 
 from pod_os_client.client import Client

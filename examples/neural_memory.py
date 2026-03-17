@@ -1,4 +1,4 @@
-"""Neural Memory operations example."""
+"""Evolutionary Neural Memory operations example."""
 
 import asyncio
 from uuid import uuid4
@@ -16,7 +16,7 @@ from pod_os_client.message.types import (
 
 
 async def main() -> None:
-    """Demonstrate Neural Memory database operations."""
+    """Demonstrate Evolutionary Neural Memory database operations."""
     config = Config(
         host="localhost",
         port=62312,
@@ -26,7 +26,7 @@ async def main() -> None:
     )
 
     async with Client(config) as client:
-        print("Neural Memory Operations Demo\n")
+        print("Evolutionary Neural Memory Operations Demo\n")
 
         # 1. Store an event with tags
         unique_id = f"demo-event-{uuid4()}"
@@ -83,7 +83,7 @@ async def main() -> None:
         if get_response.payload:
             print(f"   Data: {get_response.payload.data}\n")
 
-        print("Neural Memory operations completed!")
+        print("Evolutionary Neural Memory operations completed!")
 
 
 if __name__ == "__main__":

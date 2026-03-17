@@ -173,7 +173,7 @@ class LinkFields:
     strength_b: float = 0.0  # Link strength B->A
     category: str = ""  # Link category
     type: str = ""  # Developer-defined event type
-    owner_event_id: str = ""  # Owner event ID (internal Neural Memory ID)
+    owner_event_id: str = ""  # Owner event ID (internal Evolutionary Neural Memory ID)
     owner_unique_id: str = ""  # Owner unique ID (developer-provided unique ID)
     tags: list["TagOutput"] = field(default_factory=list)  # Tags for this link
     target_tags: list["TagOutput"] = field(default_factory=list)  # Tags for target
@@ -184,7 +184,7 @@ class LinkFields:
 
 @dataclass(slots=True)
 class NeuralMemoryFields:
-    """Neural Memory Actor-specific operations.
+    """Evolutionary Neural Memory Actor-specific operations.
 
     Set only the field relevant to your Intent; others should be None.
     """
@@ -282,7 +282,7 @@ class Message:
     # Payload data (None if no payload)
     payload: PayloadFields | None = None
 
-    # Neural Memory Actor operations (None for Gateway-only messages)
+    # Evolutionary Neural Memory Actor operations (None for Gateway-only messages)
     neural_memory: NeuralMemoryFields | None = None
 
     # Response data (populated by decoder, None for requests)

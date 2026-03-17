@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TCP connection management with automatic reconnection
 - Connection pooling for high-throughput scenarios
 - Concurrent message handling with MessageId-based routing
-- Neural Memory database operations (store, retrieve, link, search)
+- Evolutionary Neural Memory database operations (store, retrieve, link, search)
 - Comprehensive type hints and mypy validation
 - Configuration management with validation
 - Error handling with custom exception hierarchy

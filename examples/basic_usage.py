@@ -37,7 +37,7 @@ async def main() -> None:
         response = await client.send_message(echo_msg)
         print(f"Received response: {response.payload_data()}")
 
-        # Store an event in Neural Memory
+        # Store an event in Evolutionary Neural Memory
         store_msg = Message(
             to="mem@gateway",
             from_=f"{config.client_name}@gateway",

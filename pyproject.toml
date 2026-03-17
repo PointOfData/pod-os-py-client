@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pod-os-py-client"
 version = "0.1.0"
-description = "High-performance Python client for Pod-OS Actor system with Neural Memory support"
+description = "High-performance Python client for Pod-OS Actor system with Evolutionary Neural Memory support"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}

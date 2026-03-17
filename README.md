@@ -1,6 +1,6 @@
 # Pod-OS Python Client
 
-High-performance Python client library for registering as a Pod-OS Actor and or communicating with a Pod-OS Actor, handling the Pod-OS/AIP message protocol (send and receive), and includes Intents for Neural Memory database operations.
+High-performance Python client library for registering as a Pod-OS Actor and or communicating with a Pod-OS Actor, handling the Pod-OS/AIP message protocol (send and receive), and includes Intents for Evolutionary Neural Memory database operations.
 
 ## Features
 
@@ -8,7 +8,7 @@ High-performance Python client library for registering as a Pod-OS Actor and or 
 - **Connection Management**: TCP/UDP support with automatic reconnection and exponential backoff
 - **Connection Pooling**: Optional pooling for high-throughput scenarios
 - **Message Protocol**: Full Pod-OS message encoding/decoding with MessagePack
-- **Neural Memory**: Complete Neural Memory database operations (store, retrieve, link, search)
+- **Evolutionary Neural Memory**: Complete Evolutionary Neural Memory database operations (store, retrieve, link, search)
 - **Type Safe**: Full type hints with mypy validation
 - **High Performance**: Sub-millisecond encoding/decoding with compiled extensions
 
@@ -111,7 +111,7 @@ config = Config(
 )
 ```
 
-## Neural Memory Operations
+## Evolutionary Neural Memory Operations
 
 Batch intents expect structured payloads; the encoder formats them automatically (aligned with the Go client):
 

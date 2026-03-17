@@ -1,6 +1,6 @@
 ## Pod-OS Communication
 
-All communication with Pod-OS occurs through messages delivered to a Gateway via some sort of connection, usually a socket. The Gateway manages message routing to the Actors hosted by the Gateway. Messages are used to control an Actor, store and retrieve events from Neural Memory (an Actor), and communicate with custom Services hosted by the Actor.
+All communication with Pod-OS occurs through messages delivered to a Gateway via some sort of connection, usually a socket. The Gateway manages message routing to the Actors hosted by the Gateway. Messages are used to control an Actor, store and retrieve events from Evolutionary Neural Memory (an Actor), and communicate with custom Services hosted by the Actor.
 
 The client software operates as an Actor. Each client connection to a Gateway acts as a separate Actor connection. Client Actors are identified by their ClientName and ActorName which must be the same. Clients may choose to connect to multiple Gateways or manage multiple connections to the same Gateway. In this case, each connection is a separate Actor and connection. Clients are encouraged to implement connection pooling to improve performance. A client connects to a Gateway using a unique ClientName name and all message routing is based on this name. In this way, a client can connect to multiple Actors and send messages to each Actor independently as well as track multiple conversations. Client Actors may have multiple connections to the same Actor, and each connection is a separately-named Actor and connection.
 

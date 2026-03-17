@@ -220,7 +220,7 @@ def _store_event_message_header(msg: "Message") -> str:
 def _store_data_message_header(msg: "Message") -> str:
     """Construct Store Data message header.
 
-    Stores data directly in the Neural Memory database. Unlike StoreEvent,
+    Stores data directly in the Evolutionary Neural Memory database. Unlike StoreEvent,
     this intent does not include tags. Required fields: Event.unique_id OR
     Event.id, Event.timestamp, Event.location, Event.location_separator,
     Payload.data, Payload.mime_type.

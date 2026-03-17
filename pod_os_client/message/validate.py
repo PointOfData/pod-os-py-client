@@ -1433,7 +1433,7 @@ def _validate_neural_memory_response_header(h: dict[str, str]) -> ValidationErro
         errs.append(_errorf(
             "warn", ctx, "response.status", "_status", "header_missing",
             "NeuralMemory response (messageType 1001) is missing _status header.",
-            "This is expected for brief-hit responses. For other responses, check the Neural Memory Actor.",
+            "This is expected for brief-hit responses. For other responses, check the Evolutionary Neural Memory Actor.",
             "", "message/decoder.py:decode_message",
         ))
 

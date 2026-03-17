@@ -11,16 +11,16 @@ class Intent:
 
     name: str  # Friendly Pod-OS name for the intent
     routing_message_type: str  # Defines message_type name for routing
-    neural_memory_command: str = ""  # Command to send to Neural Memory Actor
+    neural_memory_command: str = ""  # Command to send to Evolutionary Neural Memory Actor
     message_type: int = 0  # Message type integer set in message header
 
 
 class _IntentTypes:
     """Container for all Pod-OS intent types."""
 
-    # Neural Memory Request intents
+    # Evolutionary Neural Memory Request intents
     StoreEvent = Intent(
-        # StoreEvent is used to store a single Event Object in a Neural Memory database.
+        # StoreEvent is used to store a single Event Object in a Evolutionary Neural Memory database.
         name="StoreEvent",
         neural_memory_command="store",
         message_type=1000,
@@ -34,57 +34,57 @@ class _IntentTypes:
         routing_message_type="MEM_REQ",
     )
     StoreBatchEvents = Intent(
-        # StoreBatchEvents is used to store a batch of Event Objects (including tags) in a Neural Memory database.
+        # StoreBatchEvents is used to store a batch of Event Objects (including tags) in a Evolutionary Neural Memory database.
         name="StoreBatchEvents",
         neural_memory_command="store_batch",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     StoreBatchTags = Intent(
-        #StoreBatchTags is used to store a batch of tag objects in an existing Event Object in a Neural Memory database. Also covers the update use case.
+        #StoreBatchTags is used to store a batch of tag objects in an existing Event Object in a Evolutionary Neural Memory database. Also covers the update use case.
         name="StoreBatchTags",
         neural_memory_command="tag_store_batch",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     GetEvent = Intent(
-        # GetEvent is used to retrieve a single Event Object from a Neural Memory database. Use GetTags=true to retrieve tags for the event.
+        # GetEvent is used to retrieve a single Event Object from a Evolutionary Neural Memory database. Use GetTags=true to retrieve tags for the event.
         name="GetEvent",
         neural_memory_command="get",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     GetEventsForTags = Intent(
-        # GetEventsForTags is used to retrieve a batch of Event Objects from a Neural Memory database by searching for Tags matching the specified pattern.
+        # GetEventsForTags is used to retrieve a batch of Event Objects from a Evolutionary Neural Memory database by searching for Tags matching the specified pattern.
         name="GetEventsForTags",
         neural_memory_command="events_for_tag",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     LinkEvent = Intent(
-        # LinkEvent is used to link two Event Objects in a Neural Memory database. It is also an Event Object itself.
+        # LinkEvent is used to link two Event Objects in a Evolutionary Neural Memory database. It is also an Event Object itself.
         name="LinkEvent",
         neural_memory_command="link",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     UnlinkEvent = Intent(
-        # UnlinkEvent is used to unlink two Event Objects in a Neural Memory database.
+        # UnlinkEvent is used to unlink two Event Objects in a Evolutionary Neural Memory database.
         name="UnlinkEvent",
         neural_memory_command="unlink",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
     StoreBatchLinks = Intent(
-        # StoreBatchLinks is used to store a batch of Link Objects in a Neural Memory database.
+        # StoreBatchLinks is used to store a batch of Link Objects in a Evolutionary Neural Memory database.
         name="StoreBatchLinks",
         neural_memory_command="link_batch",
         message_type=1000,
         routing_message_type="MEM_REQ",
     )
-    # Neural Memory Response intents
+    # Evolutionary Neural Memory Response intents
     StoreEventResponse = Intent(
-        # StoreEventResponse is used to confirm the storage of a single Event Object in a Neural Memory database.
+        # StoreEventResponse is used to confirm the storage of a single Event Object in a Evolutionary Neural Memory database.
         name="StoreEventResponse",
         neural_memory_command="store",
         message_type=1001,
@@ -98,49 +98,49 @@ class _IntentTypes:
         routing_message_type="MEM_REPLY",
     )
     StoreBatchEventsResponse = Intent(
-        # StoreBatchEventsResponse is used to confirm the storage of a batch of Event Objects (including tags) in a Neural Memory database.
+        # StoreBatchEventsResponse is used to confirm the storage of a batch of Event Objects (including tags) in a Evolutionary Neural Memory database.
         name="StoreBatchEventsResponse",
         neural_memory_command="store_batch",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     StoreBatchTagsResponse = Intent(
-        # StoreBatchTagsResponse is used to confirm the storage of a batch of tag objects (associated with an existing Event Object) in a Neural Memory database.
+        # StoreBatchTagsResponse is used to confirm the storage of a batch of tag objects (associated with an existing Event Object) in a Evolutionary Neural Memory database.
         name="StoreBatchTagsResponse",
         neural_memory_command="tag_store_batch",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     GetEventResponse = Intent(
-        # GetEventResponse is used to confirm the retrieval of a single Event Object from a Neural Memory database
+        # GetEventResponse is used to confirm the retrieval of a single Event Object from a Evolutionary Neural Memory database
         name="GetEventResponse",
         neural_memory_command="get",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     GetEventsForTagsResponse = Intent(
-        # GetEventsForTagsResponse is used to confirm the retrieval of a batch of Event Objects from a Neural Memory database by searching for Tags.
+        # GetEventsForTagsResponse is used to confirm the retrieval of a batch of Event Objects from a Evolutionary Neural Memory database by searching for Tags.
         name="GetEventsForTagsResponse",
         neural_memory_command="events_for_tag",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     LinkEventResponse = Intent(
-        # LinkEventResponse is used to link two Event Objects in a Neural Memory database. It is also an Event Object itself.
+        # LinkEventResponse is used to link two Event Objects in a Evolutionary Neural Memory database. It is also an Event Object itself.
         name="LinkEventResponse",
         neural_memory_command="link",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     UnlinkEventResponse = Intent(
-        # UnlinkEventResponse is used to unlink two Event Objects in a Neural Memory database.
+        # UnlinkEventResponse is used to unlink two Event Objects in a Evolutionary Neural Memory database.
         name="UnlinkEventResponse",
         neural_memory_command="unlink",
         message_type=1001,
         routing_message_type="MEM_REPLY",
     )
     StoreBatchLinksResponse = Intent(
-        # StoreBatchLinksResponse is used to store a batch of link objects in a Neural Memory database.
+        # StoreBatchLinksResponse is used to store a batch of link objects in a Evolutionary Neural Memory database.
         name="StoreBatchLinksResponse",
         neural_memory_command="link_batch",
         message_type=1001,
@@ -280,7 +280,7 @@ _COMMAND_TO_RESPONSE_INTENT: dict[str, Intent] = {
     "link_batch": IntentType.StoreBatchLinksResponse,
 }
 
-# Mapping: MessageType -> Intent (for non-Neural Memory intents)
+# Mapping: MessageType -> Intent (for non-Evolutionary Neural Memory intents)
 _MESSAGE_TYPE_TO_INTENT: dict[int, Intent] = {
     1: IntentType.ActorStart,
     2: IntentType.ActorEcho,
@@ -325,7 +325,7 @@ def intent_from_command(command: str) -> Intent | None:
     """Return the Intent corresponding to the given command string (request).
 
     Args:
-        command: Neural Memory command string (e.g., "store", "get")
+        command: Evolutionary Neural Memory command string (e.g., "store", "get")
 
     Returns:
         The matching Intent or None if not found
@@ -337,7 +337,7 @@ def intent_from_response_command(command: str) -> Intent | None:
     """Return the Response Intent corresponding to the given command string.
 
     Args:
-        command: Neural Memory command string (e.g., "store", "get")
+        command: Evolutionary Neural Memory command string (e.g., "store", "get")
 
     Returns:
         The matching Response Intent or None if not found
@@ -354,7 +354,7 @@ def intent_from_message_type_and_command(message_type: int, command: str) -> Int
 
     Args:
         message_type: Message type integer
-        command: Neural Memory command string
+        command: Evolutionary Neural Memory command string
 
     Returns:
         The matching Intent or None if not found
