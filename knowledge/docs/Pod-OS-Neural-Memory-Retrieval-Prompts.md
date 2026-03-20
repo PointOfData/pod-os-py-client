@@ -414,6 +414,64 @@ msg = Message(
 )
 ```
 
+#### Example 3: Bulk GetEvent by ID — Python
+
+To retrieve multiple events by ID in a single request, use `GetEventsForTags` with a series of OR clauses — one per event. This avoids issuing one `GetEvent` request per event. Each search clause must use `filter_type:eq` for an exact match, and the same tag value pattern is supplied to both `low` and `filter_low`.
+
+Which ID type to use is an either/or decision:
+
+- **By internal EventId**: tag value pattern is `event_id=<event_id>`
+- **By developer UniqueId**: tag value pattern is `\x01u=<unique_id>`. The `\x01` byte prefix (ASCII SOH, `0x01`) is required to avoid collisions with user-defined tag keys.
+
+```python
+from uuid import uuid4
+from pod_os_client.message.intents import IntentType
+from pod_os_client.message.types import (
+    Message,
+    NeuralMemoryFields,
+    GetEventsForTagsOptions,
+    SearchOptions,
+)
+
+# Option A — by internal EventId
+event_ids = [
+    "2024.01.15.14.30.45.123456@actor1|location1|segment1",
+    "2024.01.16.09.00.00.000001@actor1|location1|segment1",
+]
+clauses = "\n".join(
+    f"clause_type:S\tboolean:or\tlow:event_id={eid}\tfilter_type:eq\tfilter_low:event_id={eid}"
+    for eid in event_ids
+)
+
+# Option B — by developer UniqueId (\x01 prefix avoids tag key collisions)
+unique_ids = ["uid-001", "uid-002", "uid-003"]
+clauses = "\n".join(
+    f"clause_type:S\tboolean:or\tlow:\x01u={uid}\tfilter_type:eq\tfilter_low:\x01u={uid}"
+    for uid in unique_ids
+)
+
+msg = Message(
+    to="mem@zeroth.example.com",
+    from_="MyClient@zeroth.example.com",
+    intent=IntentType.GetEventsForTags.name,
+    client_name="MyClient",
+    message_id=str(uuid4()),
+    neural_memory=NeuralMemoryFields(
+        search=SearchOptions(
+            clause=clauses,
+            buffer_results=True,
+            buffer_format="0",
+        ),
+        get_events_for_tags=GetEventsForTagsOptions(
+            buffer_results=True,
+        ),
+    ),
+)
+# response = await client.send_message(msg)
+```
+
+Each clause uses `boolean:or` so the result set accumulates one event per ID. The `filter_type:eq` enforces an exact match against the tag value. The response `event_records` list will contain one entry per matched event.
+
 #### Example Response
 
 The response is populated in `response` and optionally `payload`. Use `response.event_records` for parsed events when the response is buffered:

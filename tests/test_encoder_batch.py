@@ -152,8 +152,8 @@ def test_format_batch_events_payload_with_location():
     result = format_batch_events_payload([spec])
     
     assert "loc=TERRA|47.6|-122.5" in result
-    # Default separator (|) should not be included
-    assert "loc_delim" not in result
+    # Default separator is always emitted (matches Go wire format)
+    assert "loc_delim=|" in result
 
 
 def test_format_batch_link_events_payload_empty():

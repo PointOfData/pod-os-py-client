@@ -103,7 +103,7 @@ def format_batch_events_payload(events: list["BatchEventSpec"]) -> str:
 
     lines: list[str] = []
 
-    for spec in events:
+    for idx, spec in enumerate(events):
         fields: list[str] = []
         event = spec.event
 
@@ -122,8 +122,7 @@ def format_batch_events_payload(events: list["BatchEventSpec"]) -> str:
             fields.append(f"timestamp={event.timestamp}")
         if event.location:
             fields.append(f"loc={event.location}")
-        if event.location_separator and event.location_separator != "|":
-            fields.append(f"loc_delim={event.location_separator}")
+        fields.append(f"loc_delim={event.location_separator or '|'}")
         if event.type:
             fields.append(f"type={event.type}")
 

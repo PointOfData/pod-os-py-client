@@ -1141,7 +1141,7 @@ def _build_known_message_types() -> set[int]:
         it.StoreEventResponse, it.StoreBatchEventsResponse, it.StoreBatchTagsResponse,
         it.GetEventResponse, it.GetEventsForTagsResponse,
         it.LinkEventResponse, it.UnlinkEventResponse, it.StoreBatchLinksResponse,
-        it.GatewayId, it.GatewayStatus, it.GatewayDisconnect,
+        it.GatewayId, it.GatewayDisconnect,
         it.GatewayStreamOn, it.GatewayStreamOff,
         it.GatewayBatchStart, it.GatewayBatchEnd, it.GatewaySendNext, it.GatewayNoSend,
         it.ActorEcho, it.ActorHalt, it.ActorStart,

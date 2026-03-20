@@ -253,76 +253,84 @@ def _store_data_message_header(msg: "Message") -> str:
 
 
 def _link_events_message_header(msg: "Message") -> str:
-    """Construct Link Events message header."""
-    parts = ["_db_cmd=link"]
+    """Construct Link Events message header.
+
+    Matches Go LinkEventsMessageHeader: every field (including _msg_id and the
+    terminal owner field) carries a trailing tab.
+    """
+    parts: list[str] = []
+    parts.append("_db_cmd=link\t")
 
     # Link creation event identifiers (from msg.event)
     if msg.event:
         if msg.event.id:
-            parts.append(f"event_id={_force_ascii(msg.event.id)}")
+            parts.append(f"event_id={_force_ascii(msg.event.id)}\t")
         elif msg.event.unique_id:
-            parts.append(f"unique_id={msg.event.unique_id}")
+            parts.append(f"unique_id={msg.event.unique_id}\t")
         if msg.event.owner:
-            parts.append(f"owner={msg.event.owner}")
+            parts.append(f"owner={msg.event.owner}\t")
 
     if msg.message_id:
-        parts.append(f"_msg_id={msg.message_id}")
+        parts.append(f"_msg_id={msg.message_id}\t")
 
     if msg.neural_memory and msg.neural_memory.link:
         link = msg.neural_memory.link
 
         # Prefer UniqueIdA/B; otherwise use EventA/B
         if link.unique_id_a and link.unique_id_b:
-            parts.append(f"unique_id_a={link.unique_id_a}")
-            parts.append(f"unique_id_b={link.unique_id_b}")
+            parts.append(f"unique_id_a={link.unique_id_a}\t")
+            parts.append(f"unique_id_b={link.unique_id_b}\t")
         elif link.event_a and link.event_b:
-            parts.append(f"event_id_a={_force_ascii(link.event_a)}")
-            parts.append(f"event_id_b={_force_ascii(link.event_b)}")
+            parts.append(f"event_id_a={_force_ascii(link.event_a)}\t")
+            parts.append(f"event_id_b={_force_ascii(link.event_b)}\t")
 
-        # Always write strength, category, loc_delim, loc, type, mime, timestamp
-        parts.append(f"strength_a={link.strength_a}")
-        parts.append(f"strength_b={link.strength_b}")
-        parts.append(f"category={link.category}")
-        parts.append(f"loc_delim={link.location_separator}")
-        parts.append(f"loc={link.location}")
-        parts.append(f"type={link.type}")
+        parts.append(f"strength_a={link.strength_a}\t")
+        parts.append(f"strength_b={link.strength_b}\t")
+        parts.append(f"category={link.category}\t")
+        parts.append(f"loc_delim={link.location_separator}\t")
+        parts.append(f"loc={link.location}\t")
+        parts.append(f"type={link.type}\t")
 
         mime = msg.payload.mime_type if msg.payload else ""
-        parts.append(f"mime={mime}")
+        parts.append(f"mime={mime}\t")
 
-        parts.append(f"timestamp={link.timestamp}")
+        parts.append(f"timestamp={link.timestamp}\t")
 
         if link.owner_event_id:
-            parts.append(f"owner_event_id={link.owner_event_id}")
+            parts.append(f"owner_event_id={link.owner_event_id}\t")
         elif link.owner_unique_id:
-            parts.append(f"owner_unique_id={link.owner_unique_id}")
+            parts.append(f"owner_unique_id={link.owner_unique_id}\t")
 
-    return "\t".join(parts)
+    return "".join(parts)
 
 
 def _unlink_events_message_header(msg: "Message") -> str:
-    """Construct Unlink Events message header."""
-    parts = ["_db_cmd=unlink"]
+    """Construct Unlink Events message header.
+
+    Matches Go UnlinkEventsMessageHeader: every field carries a trailing tab.
+    """
+    parts: list[str] = []
+    parts.append("_db_cmd=unlink\t")
 
     if msg.neural_memory and msg.neural_memory.link:
         link = msg.neural_memory.link
         if link.owner:
-            parts.append(f"owner={link.owner}")
+            parts.append(f"owner={link.owner}\t")
         if link.id:
-            parts.append(f"event_id={_force_ascii(link.id)}")
+            parts.append(f"event_id={_force_ascii(link.id)}\t")
         elif link.unique_id:
-            parts.append(f"unique_id={link.unique_id}")
+            parts.append(f"unique_id={link.unique_id}\t")
         if link.location_separator:
-            parts.append(f"loc_delim={link.location_separator}")
+            parts.append(f"loc_delim={link.location_separator}\t")
         if link.location:
-            parts.append(f"loc={link.location}")
+            parts.append(f"loc={link.location}\t")
         if link.timestamp:
-            parts.append(f"timestamp={link.timestamp}")
+            parts.append(f"timestamp={link.timestamp}\t")
 
     if msg.message_id:
-        parts.append(f"_msg_id={msg.message_id}")
+        parts.append(f"_msg_id={msg.message_id}\t")
 
-    return "\t".join(parts)
+    return "".join(parts)
 
 
 def _get_event_message_header(msg: "Message") -> str:
@@ -339,6 +347,8 @@ def _get_event_message_header(msg: "Message") -> str:
         opts = msg.neural_memory.get_event
         if opts.send_data:
             parts.append("send_data=Y")
+        if opts.local_id_only:
+            parts.append("local_id_only=Y")
         if opts.get_tags:
             parts.append("get_tags=Y")
         if opts.get_links:
@@ -347,12 +357,6 @@ def _get_event_message_header(msg: "Message") -> str:
             parts.append("get_link_tags=Y")
         if opts.get_target_tags:
             parts.append("get_target_tags=Y")
-        if opts.tag_format is not None:
-            parts.append(f"tag_format={opts.tag_format}")
-        if opts.first_link:
-            parts.append(f"first_link={opts.first_link}")
-        if opts.link_count:
-            parts.append(f"link_count={opts.link_count}")
         if opts.event_facet_filter:
             parts.append(f"event_facet_filter={opts.event_facet_filter}")
         if opts.link_facet_filter:
@@ -361,6 +365,14 @@ def _get_event_message_header(msg: "Message") -> str:
             parts.append(f"target_facet_filter={opts.target_facet_filter}")
         if opts.category_filter:
             parts.append(f"category_filter={opts.category_filter}")
+        if opts.tag_filter:
+            parts.append(f"tag_filter={opts.tag_filter}")
+        parts.append(f"tag_format={opts.tag_format if opts.tag_format is not None else 0}")
+        parts.append(f"request_format={opts.request_format}")
+        if opts.first_link:
+            parts.append(f"first_link={opts.first_link}")
+        if opts.link_count:
+            parts.append(f"link_count={opts.link_count}")
 
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}")
@@ -409,6 +421,8 @@ def _get_events_for_tag_message_header(msg: "Message") -> str:
             parts.append("get_link_tags=Y")
         if opts.get_target_tags:
             parts.append("get_target_tags=Y")
+        if opts.get_event_object_count:
+            parts.append("get_eo_count=Y")
         if invert_hit_tag_filter:
             parts.append("invert_hit_tag_filter=Y")
 
@@ -417,7 +431,7 @@ def _get_events_for_tag_message_header(msg: "Message") -> str:
         if opts.event_pattern_high:
             parts.append(f"event_high={_force_ascii(opts.event_pattern_high)}")
         if opts.link_tag_filter:
-            parts.append(f"link_tag_filter={_force_ascii(opts.link_tag_filter)}")
+            parts.append(f"link_tag_pattern={_force_ascii(opts.link_tag_filter)}")
         if opts.linked_events_filter:
             parts.append(f"linked_events_tag_filter={_force_ascii(opts.linked_events_filter)}")
         if opts.link_category:
@@ -452,13 +466,15 @@ def _get_events_for_tag_message_header(msg: "Message") -> str:
 
 
 def _store_batch_events_message_header(msg: "Message") -> str:
-    """Construct Store Batch Events message header."""
-    parts = ["_db_cmd=store_batch"]
+    """Construct Store Batch Events message header.
 
+    Matches Go StoreBatchEventsMessageHeader: each field has a trailing tab.
+    """
+    parts: list[str] = []
+    parts.append("_db_cmd=store_batch\t")
     if msg.message_id:
-        parts.append(f"_msg_id={msg.message_id}")
-
-    return "\t".join(parts)
+        parts.append(f"_msg_id={msg.message_id}\t")
+    return "".join(parts)
 
 
 def _store_batch_tags_message_header(msg: "Message") -> str:
