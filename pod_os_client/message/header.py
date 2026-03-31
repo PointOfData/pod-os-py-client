@@ -239,9 +239,9 @@ def _store_data_message_header(msg: "Message") -> str:
         parts.append(f"loc_delim={msg.event.location_separator}")
         parts.append(f"loc={msg.event.location}")
     else:
-        parts.append(f"timestamp={get_timestamp()}")
-        parts.append("loc_delim=|")
-        parts.append("loc=")
+        raise ValueError(
+            "StoreData requires msg.event with a valid location; msg.event is None"
+        )
 
     mime = msg.payload.mime_type if msg.payload else ""
     parts.append(f"mime={mime}")

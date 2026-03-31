@@ -12,6 +12,7 @@ check with zero overhead.
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -1124,11 +1125,6 @@ def _decode_wire_header(header_str: str) -> dict[str, str]:
     return h
 
 
-def _is_known_message_type(t: int) -> bool:
-    """Return True if t matches any known Intent.MessageType."""
-    return t in _known_message_types
-
-
 def _build_known_message_types() -> set[int]:
     """Build the set of all known message type integers from IntentType."""
     from pod_os_client.message.intents import IntentType
@@ -1513,6 +1509,12 @@ def explain_validation_errors(errs: ValidationErrors, endpoint: str,
 
     if not endpoint:
         return "", ValueError("vLLM endpoint is required")
+
+    parsed_url = urllib.parse.urlparse(endpoint)
+    if parsed_url.scheme not in ("http", "https"):
+        return "", ValueError(
+            f"vLLM endpoint must use http or https scheme, got {parsed_url.scheme!r}"
+        )
 
     if not model:
         model = "default"

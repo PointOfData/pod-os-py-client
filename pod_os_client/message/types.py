@@ -341,6 +341,8 @@ class Tag:
     value: Any = None  # Supports string, int, float, bool, map, slice, JSON objects
     timestamp: str = ""  # Event timestamp POSIX timestamp
     id: str = ""  # Tag's Event Object ID
+    owner: str = ""  # Owner ID
+    owner_unique_id: str = ""  # Owner unique ID (e.g. backing Observation Event Object)
 
     def string_value(self) -> tuple[str, bool]:
         """Return the Value as a string."""
