@@ -1,17 +1,21 @@
 """Main Pod-OS client implementation."""
 
 import asyncio
+import logging
 from uuid import uuid4
 
 from pod_os_client.config import Config
 from pod_os_client.connection.client import ConnectionClient
 from pod_os_client.errors import AuthenticationError
 from pod_os_client.errors import ConnectionError as PodOSConnectionError
+from pod_os_client.errors import DecodeError
 from pod_os_client.errors import TimeoutError as PodOSTimeoutError
 from pod_os_client.message.decoder import decode_message
 from pod_os_client.message.encoder import encode_message
 from pod_os_client.message.intents import IntentType
 from pod_os_client.message.types import Message
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["Client"]
 
@@ -51,7 +55,12 @@ class Client:
             TimeoutError: If operation times out
         """
         # Create connection
-        self._connection = ConnectionClient(self.config.host, self.config.port, self.config.network)
+        self._connection = ConnectionClient(
+            self.config.host,
+            self.config.port,
+            self.config.network,
+            send_timeout=self.config.send_timeout,
+        )
 
         # Connect with timeout
         await self._connection.connect(self.config.dial_timeout)
@@ -171,10 +180,13 @@ class Client:
         """Background loop to receive and route messages.
 
         Routes responses to waiting futures based on message ID.
+        Uses a 30-second receive timeout to periodically check for shutdown
+        and detect half-open connections.
         """
+        idle_timeout = self.config.receive_timeout or 30.0
         while self._connected and self._connection:
             try:
-                data = await self._connection.receive(timeout=None)
+                data = await self._connection.receive(timeout=idle_timeout)
                 msg = decode_message(data)
 
                 # Route to waiting future
@@ -184,14 +196,21 @@ class Client:
                         if not future.done():
                             future.set_result(msg)
 
-            except PodOSConnectionError:
+            except PodOSConnectionError as e:
+                err_str = str(e)
+                if "timeout" in err_str or "timed out" in err_str:
+                    continue
                 # Connection error - attempt reconnection if enabled
+                logger.error("connection error in receiver: %s", e)
                 if self.config.enable_reconnection and not self._reconnecting:
                     asyncio.create_task(self._reconnect())
                 else:
                     break
-            except Exception:
-                # Unexpected error - stop receiver
+            except DecodeError as e:
+                logger.warning("undecipherable frame: %s", e)
+                continue
+            except Exception as e:
+                logger.error("unexpected error in receiver: %s", e)
                 break
 
     async def _reconnect(self) -> None:

@@ -10,7 +10,7 @@ from pod_os_client.message.responses import (
     parse_store_batch_events_payload,
     parse_tags_from_payload,
 )
-from pod_os_client.message.types import Message, PayloadFields, ResponseFields
+from pod_os_client.message.types import EventFields, Message, PayloadFields, ResponseFields
 
 
 def test_parse_tags_from_payload():
@@ -221,3 +221,43 @@ def test_parse_malformed_payload():
     events, ok = parse_get_events_for_tags_payload(msg)
     assert ok  # Returns True even if no valid events found
     assert len(events) == 0
+
+
+def test_parse_get_events_for_tags_links_populate_unique_id_a():
+    """Test that unique_id_a is populated from parent event's unique_id on link records."""
+    msg = Message()
+    msg.payload = PayloadFields(
+        data=(
+            "_event_id=evt1\tunique_id=src_uid\ttag:1:_unique_id=src_uid\n"
+            "_link=link1\tsource=evt1\ttarget=evt2\tstrength=0.9\tcategory=describes\ttarget_unique_id=tgt_uid"
+        )
+    )
+    msg.response = ResponseFields()
+
+    events, ok = parse_get_events_for_tags_payload(msg)
+
+    assert ok
+    assert len(events) == 1
+    assert len(events[0].links) == 1
+    link = events[0].links[0]
+    assert link.unique_id_a == "src_uid"
+    assert link.unique_id_b == "tgt_uid"
+
+
+def test_parse_get_event_response_links_populate_unique_id_a():
+    """Test that unique_id_a is populated from parent event's unique_id on GetEvent link records."""
+    msg = Message()
+    msg.payload = PayloadFields(
+        data="_link=link1\ttarget_event=evt2\ttarget_unique_id=tgt_uid\tstrength=0.9\tcategory=describes"
+    )
+    msg.response = ResponseFields()
+    msg.event = EventFields(id="evt1", unique_id="src_uid")
+
+    header_map = {"event_id": "evt1"}
+
+    tags, links, ok = parse_get_event_response(msg, header_map)
+
+    assert ok
+    assert len(links) == 1
+    assert links[0].unique_id_a == "src_uid"
+    assert links[0].unique_id_b == "tgt_uid"

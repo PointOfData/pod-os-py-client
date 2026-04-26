@@ -381,6 +381,10 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
             if link.event_b and link.event_b in target_tags_map:
                 link.target_tags = target_tags_map[link.event_b]
 
+            # Populate unique_id_a from parent event's unique_id (links are stored on the source event)
+            if not link.unique_id_a and event.unique_id:
+                link.unique_id_a = event.unique_id
+
             links.append(link)
 
         event.links = links
@@ -651,6 +655,9 @@ def parse_get_event_response(
             link.tags = link_tags_map[link.id]
         if link.event_b and link.event_b in target_tags_map:
             link.target_tags = target_tags_map[link.event_b]
+        # Populate unique_id_a from parent event's unique_id (links are stored on the source event)
+        if not link.unique_id_a and msg.event and msg.event.unique_id:
+            link.unique_id_a = msg.event.unique_id
         links.append(link)
 
     return tags, links, True
