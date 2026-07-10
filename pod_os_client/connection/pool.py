@@ -120,6 +120,29 @@ class ConnectionPool:
         """
         return (len(self._available), len(self._in_use))
 
+    async def ping_idle_connections(
+        self, ping: Callable[[ConnectionClient], Awaitable[None]]
+    ) -> int:
+        """Ping each idle (not checked-out) connection, then return it to the pool."""
+        async with self._lock:
+            snapshot = list(self._available)
+            self._available.clear()
+
+        sent = 0
+        for conn in snapshot:
+            if not conn.is_connected():
+                await conn.close()
+                continue
+            try:
+                await ping(conn)
+                sent += 1
+                async with self._lock:
+                    self._available.append(conn)
+            except Exception:
+                await conn.close()
+
+        return sent
+
     async def __aenter__(self) -> "ConnectionPool":
         """Async context manager entry."""
         await self.initialize()

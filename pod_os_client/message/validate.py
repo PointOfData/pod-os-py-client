@@ -56,7 +56,7 @@ class ValidationError:
     wire_field: str = ""    # Wire protocol key: "category"
     rule: str = ""          # "required", "one_of_required", "format", "nil_struct",
                             #  "header_missing", "header_value", "payload_type",
-                            #  "payload_format", "uncovered"
+                            #  "payload_format", "semantic", "uncovered"
     message: str = ""       # Human-readable description of what is wrong
     fix: str = ""           # Concrete remediation step in plain English
     example_code: str = ""  # Minimal Python snippet showing a correct value
@@ -166,6 +166,135 @@ def _warn_uncovered(intent: str, msg: str) -> ValidationError:
         "This case is currently unsupported. Monitor release notes for support updates.",
         "", "",
     )
+
+
+_SYS_SPECIAL_ID = "$sys"
+
+_GUIDANCE_OWNER_CREATE = (
+    "Owner is the entity that created the event: event.owner must be a pre-existing internal event.id "
+    "in this database or $sys; event.owner_unique_id must be a pre-existing event.unique_id."
+)
+_GUIDANCE_OWNER_APPLY = (
+    "Owner is the creating entity (may differ from the target Id): event.owner must be a pre-existing "
+    "internal event.id in this database (not $sys); event.owner_unique_id must be a pre-existing event.unique_id."
+)
+_GUIDANCE_ID_APPLY = (
+    "event.id or event.unique_id identifies the pre-existing target event in this database to which tags "
+    "or payload are applied ($sys is not an individual event)."
+)
+_GUIDANCE_ID_LOOKUP = (
+    "event.id must be a pre-existing internal event.id or $sys; event.unique_id must be a pre-existing "
+    "event.unique_id in this database."
+)
+_GUIDANCE_ID_CREATE = (
+    "event.id is AIP-generated at storage time (time+location); set event.unique_id for a "
+    "developer-controlled identifier known before storage."
+)
+_GUIDANCE_LINK_ID_CREATE = (
+    "neural_memory.link.id is AIP-generated at storage time; set neural_memory.link.unique_id for a "
+    "developer-controlled link identifier."
+)
+
+
+def _is_sys_id(s: str | None) -> bool:
+    return s == _SYS_SPECIAL_ID
+
+
+def _semantic_error(intent: str, struct_path: str, wire_field: str,
+                    msg: str, fix: str, code: str, *refs: str) -> ValidationError:
+    return _errorf("error", intent, struct_path, wire_field, "semantic", msg, fix, code, *refs)
+
+
+def _semantic_warn(intent: str, struct_path: str, wire_field: str,
+                   msg: str, fix: str, code: str, *refs: str) -> ValidationError:
+    return _errorf("warn", intent, struct_path, wire_field, "semantic", msg, fix, code, *refs)
+
+
+def _validate_apply_to_existing_semantics(intent: str, ev) -> ValidationErrors:
+    errs: ValidationErrors = []
+    if ev is None:
+        return errs
+    if _is_sys_id(ev.owner):
+        errs.append(_semantic_error(
+            intent, "event.owner", "owner",
+            f"event.owner must not be $sys for {intent}; owner must be a pre-existing individual event Id in this database.",
+            "Set event.owner to the internal event.id of the entity that owns/creates the tags or payload.",
+            'msg.event.owner = "2024.01.15..."',
+            "message/types.py:EventFields.owner",
+        ))
+    if _is_sys_id(ev.id):
+        errs.append(_semantic_error(
+            intent, "event.id", "event_id",
+            f"event.id must not be $sys for {intent}; $sys is not an individual event.",
+            "Set event.id to the internal event.id of the pre-existing target event.",
+            'msg.event.id = "2024.01.15..."',
+            "message/types.py:EventFields.id",
+        ))
+    if _is_sys_id(ev.unique_id):
+        errs.append(_semantic_error(
+            intent, "event.unique_id", "unique_id",
+            f"event.unique_id must not be $sys for {intent}; $sys is not an individual event.",
+            "Set event.unique_id to the UniqueId of the pre-existing target event.",
+            'msg.event.unique_id = "my-event-uid"',
+            "message/types.py:EventFields.unique_id",
+        ))
+    return errs
+
+
+def _validate_lookup_owner_not_used_event(intent: str, ev) -> ValidationErrors:
+    errs: ValidationErrors = []
+    if ev is None:
+        return errs
+    if ev.owner or ev.owner_unique_id:
+        errs.append(_semantic_warn(
+            intent, "event.owner / event.owner_unique_id", "owner / owner_unique_id",
+            f"Owner fields are not used for {intent}; only event.id or event.unique_id identify the event.",
+            "Remove event.owner and event.owner_unique_id; set event.id or event.unique_id instead.",
+            'msg.event = EventFields(id="2024.01.15...")',
+            "message/types.py:EventFields.owner", "message/header.py:_get_event_message_header",
+        ))
+    return errs
+
+
+def _validate_lookup_owner_not_used_link(intent: str, lk) -> ValidationErrors:
+    errs: ValidationErrors = []
+    if lk is None:
+        return errs
+    if lk.owner or lk.owner_event_id or lk.owner_unique_id:
+        errs.append(_semantic_warn(
+            intent,
+            "neural_memory.link.owner / owner_event_id / owner_unique_id",
+            "owner / owner_event_id / owner_unique_id",
+            f"Owner fields are not used for {intent}; only neural_memory.link.id or neural_memory.link.unique_id identify the link event.",
+            "Remove owner fields; set neural_memory.link.id or neural_memory.link.unique_id.",
+            'msg.neural_memory.link = LinkFields(id="link-event-id")',
+            "message/types.py:LinkFields", "message/header.py:_unlink_events_message_header",
+        ))
+    return errs
+
+
+def _validate_create_event_id_set(intent: str, field: str, id_value: str | None) -> ValidationErrors:
+    if not id_value:
+        return []
+    return [_semantic_warn(
+        intent, field, "event_id",
+        f"{field} is set for {intent} but event.id is AIP-generated at storage time (time+location).",
+        _GUIDANCE_ID_CREATE,
+        'msg.event.unique_id = "my-event-uid"',
+        "message/types.py:EventFields.id", "message/types.py:EventFields.unique_id",
+    )]
+
+
+def _validate_create_link_id_set(intent: str, field: str, id_value: str | None) -> ValidationErrors:
+    if not id_value:
+        return []
+    return [_semantic_warn(
+        intent, field, "event_id",
+        f"{field} is set for {intent} but link event.id is AIP-generated at storage time.",
+        _GUIDANCE_LINK_ID_CREATE,
+        'msg.neural_memory.link.unique_id = "my-link-uid"',
+        "message/types.py:LinkFields.id", "message/types.py:LinkFields.unique_id",
+    )]
 
 
 def _is_name_at_gateway(s: str) -> bool:
@@ -281,10 +410,12 @@ def _validate_store_event(msg: "Message") -> ValidationErrors:
             intent,
             "event.owner", "owner",
             "event.owner_unique_id", "owner_unique_id",
-            'Set event.owner or event.owner_unique_id to identify the owning entity.',
+            "Set event.owner or event.owner_unique_id to identify the entity that created this event. "
+            + _GUIDANCE_OWNER_CREATE,
             'msg.event.owner = "$sys"',
             "message/types.py:EventFields.owner", "message/header.py:_store_event_message_header",
         ))
+    errs.extend(_validate_create_event_id_set(intent, "event.id", msg.event.id))
 
     if not msg.event.location:
         errs.append(_required_field(
@@ -309,6 +440,42 @@ def _validate_store_batch_events(msg: "Message") -> ValidationErrors:
     return _validate_payload(msg)
 
 
+def _validate_store_data(msg: "Message") -> ValidationErrors:
+    intent = "StoreData"
+    errs: ValidationErrors = []
+
+    if msg.event is None:
+        errs.append(_nil_struct(
+            intent, "event",
+            "Initialize event with the id or unique_id of the target event.",
+            'msg.event = EventFields(unique_id="my-event-uid", owner_unique_id="user-001")',
+            "message/types.py:EventFields", "message/header.py:_store_data_message_header",
+        ))
+        return errs
+
+    if not msg.event.id and not msg.event.unique_id:
+        errs.append(_one_of_required(
+            intent,
+            "event.id", "event_id",
+            "event.unique_id", "unique_id",
+            "Set event.id or event.unique_id to the pre-existing target event. " + _GUIDANCE_ID_APPLY,
+            'msg.event.unique_id = "my-event-uid"',
+            "message/types.py:EventFields", "message/header.py:_store_data_message_header",
+        ))
+    if not msg.event.owner and not msg.event.owner_unique_id:
+        errs.append(_one_of_required(
+            intent,
+            "event.owner", "owner",
+            "event.owner_unique_id", "owner_unique_id",
+            "Set event.owner or event.owner_unique_id to the creating entity (may differ from the target Id). "
+            + _GUIDANCE_OWNER_APPLY,
+            'msg.event.owner_unique_id = "user-001"',
+            "message/types.py:EventFields.owner", "message/header.py:_store_data_message_header",
+        ))
+    errs.extend(_validate_apply_to_existing_semantics(intent, msg.event))
+    return errs
+
+
 def _validate_store_batch_tags(msg: "Message") -> ValidationErrors:
     intent = "StoreBatchTags"
     errs: ValidationErrors = []
@@ -326,19 +493,21 @@ def _validate_store_batch_tags(msg: "Message") -> ValidationErrors:
                 intent,
                 "event.id", "event_id",
                 "event.unique_id", "unique_id",
-                "Set event.id or event.unique_id to identify the target event.",
-                'msg.event.id = "2024.01.15..."',
-                "message/types.py:EventFields",
+                "Set event.id or event.unique_id to the pre-existing target event. " + _GUIDANCE_ID_APPLY,
+                'msg.event.unique_id = "my-event-uid"',
+                "message/types.py:EventFields", "message/header.py:_store_batch_tags_message_header",
             ))
         if not msg.event.owner and not msg.event.owner_unique_id:
             errs.append(_one_of_required(
                 intent,
                 "event.owner", "owner",
                 "event.owner_unique_id", "owner_unique_id",
-                'Set event.owner or event.owner_unique_id to identify the owning entity.',
-                'msg.event.owner = "$sys"',
-                "message/types.py:EventFields.owner",
+                "Set event.owner or event.owner_unique_id to the creating entity (may differ from the target Id). "
+                + _GUIDANCE_OWNER_APPLY,
+                'msg.event.owner_unique_id = "user-001"',
+                "message/types.py:EventFields.owner", "message/header.py:_store_batch_tags_message_header",
             ))
+        errs.extend(_validate_apply_to_existing_semantics(intent, msg.event))
 
     errs.extend(_validate_payload(msg))
     return errs
@@ -362,11 +531,11 @@ def _validate_get_event(msg: "Message") -> ValidationErrors:
             intent,
             "event.id", "event_id",
             "event.unique_id", "unique_id",
-            "Set event.id or event.unique_id to identify the event to retrieve.",
+            "Set event.id or event.unique_id to identify the event to retrieve. " + _GUIDANCE_ID_LOOKUP,
             'msg.event.id = "2024.01.15..."',
             "message/types.py:EventFields", "message/header.py:_get_event_message_header",
         ))
-
+    errs.extend(_validate_lookup_owner_not_used_event(intent, msg.event))
     return errs
 
 
@@ -468,10 +637,12 @@ def _validate_link_event(msg: "Message") -> ValidationErrors:
             intent,
             "neural_memory.link.owner_event_id", "owner_event_id",
             "neural_memory.link.owner_unique_id", "owner_unique_id",
-            "Set neural_memory.link.owner_event_id or neural_memory.link.owner_unique_id.",
+            "Set neural_memory.link.owner_event_id or neural_memory.link.owner_unique_id to the entity that created the link event. "
+            + _GUIDANCE_OWNER_CREATE,
             'msg.neural_memory.link.owner_event_id = "owner-event-id"',
             "message/types.py:LinkFields.owner_event_id",
         ))
+    errs.extend(_validate_create_link_id_set(intent, "neural_memory.link.id", lk.id))
 
     if not lk.location:
         errs.append(_required_field(
@@ -520,10 +691,12 @@ def _validate_unlink_event(msg: "Message") -> ValidationErrors:
             intent,
             "neural_memory.link.id", "event_id",
             "neural_memory.link.unique_id", "unique_id",
-            "Set neural_memory.link.id or neural_memory.link.unique_id to identify the link event object.",
+            "Set neural_memory.link.id or neural_memory.link.unique_id to identify the link event object. "
+            + _GUIDANCE_ID_LOOKUP,
             'msg.neural_memory.link.id = "link-event-id"',
             "message/types.py:LinkFields", "message/header.py:_unlink_events_message_header",
         ))
+    errs.extend(_validate_lookup_owner_not_used_link(intent, lk))
 
     # location_separator required when location is set
     if lk.location and not lk.location_separator:
@@ -723,10 +896,11 @@ def _validate_payload(msg: "Message") -> ValidationErrors:
                     "owner / owner_unique_id",
                     "one_of_required",
                     f"BatchEventSpec[{i}]: owner or owner_unique_id is required.",
-                    "Set event.owner or event.owner_unique_id.",
+                    "Set event.owner or event.owner_unique_id. " + _GUIDANCE_OWNER_CREATE,
                     'events[i].event.owner = "$sys"',
                     "message/types.py:BatchEventSpec",
                 ))
+            errs.extend(_validate_create_event_id_set(intent, f"{path}.id", spec.event.id))
             if not spec.event.location:
                 errs.append(_errorf(
                     "error", intent, f"{path}.location", "loc", "payload_format",
@@ -806,10 +980,12 @@ def _validate_payload(msg: "Message") -> ValidationErrors:
                     f"{ev_path}.owner / {ev_path}.owner_unique_id",
                     "owner / owner_unique_id", "payload_format",
                     f"BatchLinkEventSpec[{i}]: event.owner or event.owner_unique_id is required.",
-                    "Set event.owner or event.owner_unique_id.",
+                    "Set event.owner or event.owner_unique_id. " + _GUIDANCE_OWNER_CREATE,
                     'links[i].event.owner = "$sys"',
                     "message/types.py:BatchLinkEventSpec",
                 ))
+            errs.extend(_validate_create_event_id_set(intent, f"{ev_path}.id", spec.event.id))
+            errs.extend(_validate_create_link_id_set(intent, f"{lk_path}.id", spec.link.id))
             if not spec.link.timestamp:
                 errs.append(_errorf(
                     "error", intent, f"{lk_path}.timestamp", "timestamp", "payload_format",
@@ -860,7 +1036,7 @@ def _validate_payload(msg: "Message") -> ValidationErrors:
                     f"{lk_path}.owner_event_id / {lk_path}.owner_unique_id",
                     "owner_event_id / owner_unique_id", "payload_format",
                     f"BatchLinkEventSpec[{i}]: link.owner_event_id or link.owner_unique_id is required.",
-                    "Set link.owner_event_id or link.owner_unique_id.",
+                    "Set link.owner_event_id or link.owner_unique_id. " + _GUIDANCE_OWNER_CREATE,
                     'links[i].link.owner_event_id = "owner-event-id"',
                     "message/types.py:LinkFields.owner_event_id",
                 ))
@@ -900,6 +1076,7 @@ def _validate_tag_list(intent: str, tags: list) -> ValidationErrors:
 _intent_validators = {
     # NeuralMemory requests
     "StoreEvent": _validate_store_event,
+    "StoreData": _validate_store_data,
     "StoreBatchEvents": _validate_store_batch_events,
     "StoreBatchTags": _validate_store_batch_tags,
     "GetEvent": _validate_get_event,
@@ -1301,17 +1478,67 @@ def _validate_neural_memory_request_header(cmd: str, h: dict[str, str],
             errs.append(_errorf(
                 "error", ctx, "event.id / event.unique_id", "event_id / unique_id", "header_missing",
                 "StoreBatchTags header is missing event_id or unique_id.",
-                "Set event.id or event.unique_id to identify the target event.",
-                'msg.event.id = "2024.01.15..."',
+                "Set event.id or event.unique_id to the pre-existing target event. " + _GUIDANCE_ID_APPLY,
+                'msg.event.unique_id = "my-event-uid"',
                 "message/header.py:_store_batch_tags_message_header",
             ))
         if not _has_header(h, "owner") and not _has_header(h, "owner_unique_id"):
             errs.append(_errorf(
                 "error", ctx, "event.owner / event.owner_unique_id", "owner / owner_unique_id", "header_missing",
                 "StoreBatchTags header is missing owner or owner_unique_id.",
-                "Set event.owner or event.owner_unique_id.",
-                'msg.event.owner = "$sys"',
+                "Set event.owner or event.owner_unique_id. " + _GUIDANCE_OWNER_APPLY,
+                'msg.event.owner_unique_id = "user-001"',
                 "message/header.py:_store_batch_tags_message_header",
+            ))
+        if h.get("owner") == _SYS_SPECIAL_ID:
+            errs.append(_semantic_error(
+                "StoreBatchTags", "event.owner", "owner",
+                "StoreBatchTags owner must not be $sys; owner must be a pre-existing individual event Id.",
+                "Set event.owner to the internal event.id of the creating entity.",
+                'msg.event.owner = "2024.01.15..."',
+                "message/header.py:_store_batch_tags_message_header",
+            ))
+        if h.get("event_id") == _SYS_SPECIAL_ID or h.get("unique_id") == _SYS_SPECIAL_ID:
+            errs.append(_semantic_error(
+                "StoreBatchTags", "event.id / event.unique_id", "event_id / unique_id",
+                "StoreBatchTags target Id must not be $sys; $sys is not an individual event.",
+                "Set event.id or event.unique_id to the pre-existing target event.",
+                'msg.event.unique_id = "my-event-uid"',
+                "message/header.py:_store_batch_tags_message_header",
+            ))
+
+    elif cmd == "store_data":
+        if not _has_header(h, "event_id") and not _has_header(h, "unique_id"):
+            errs.append(_errorf(
+                "error", ctx, "event.id / event.unique_id", "event_id / unique_id", "header_missing",
+                "StoreData header is missing event_id or unique_id.",
+                "Set event.id or event.unique_id to the pre-existing target event. " + _GUIDANCE_ID_APPLY,
+                'msg.event.unique_id = "my-event-uid"',
+                "message/header.py:_store_data_message_header",
+            ))
+        if not _has_header(h, "owner") and not _has_header(h, "owner_unique_id"):
+            errs.append(_errorf(
+                "error", ctx, "event.owner / event.owner_unique_id", "owner / owner_unique_id", "header_missing",
+                "StoreData header is missing owner or owner_unique_id.",
+                "Set event.owner or event.owner_unique_id. " + _GUIDANCE_OWNER_APPLY,
+                'msg.event.owner_unique_id = "user-001"',
+                "message/header.py:_store_data_message_header",
+            ))
+        if h.get("owner") == _SYS_SPECIAL_ID:
+            errs.append(_semantic_error(
+                "StoreData", "event.owner", "owner",
+                "StoreData owner must not be $sys; owner must be a pre-existing individual event Id.",
+                "Set event.owner to the internal event.id of the creating entity.",
+                'msg.event.owner = "2024.01.15..."',
+                "message/header.py:_store_data_message_header",
+            ))
+        if h.get("event_id") == _SYS_SPECIAL_ID or h.get("unique_id") == _SYS_SPECIAL_ID:
+            errs.append(_semantic_error(
+                "StoreData", "event.id / event.unique_id", "event_id / unique_id",
+                "StoreData target Id must not be $sys; $sys is not an individual event.",
+                "Set event.id or event.unique_id to the pre-existing target event.",
+                'msg.event.unique_id = "my-event-uid"',
+                "message/header.py:_store_data_message_header",
             ))
 
     elif cmd == "get":

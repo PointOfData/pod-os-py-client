@@ -56,6 +56,8 @@ def construct_header(msg: "Message", intent: "Intent", connection_id_uuid: str) 
         return _actor_response_header(msg)
     elif intent_name == "Status":
         return _status_header(msg)
+    elif intent_name == "StatusRequest":
+        return _status_request_header(msg)
     else:
         return ""
 
@@ -139,6 +141,13 @@ def _actor_response_header(msg: "Message") -> str:
             parts.append(f"_type={msg.response.type}")
     
     return "\t".join(parts) if parts else ""
+
+
+def _status_request_header(msg: "Message") -> str:
+    """Construct StatusRequest header used for actor health probes."""
+    if msg.message_id:
+        return f"_msg_id={msg.message_id}"
+    return ""
 
 
 def _status_header(msg: "Message") -> str:

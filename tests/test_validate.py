@@ -299,7 +299,7 @@ class TestStoreBatchTags:
         _enable_validation(monkeypatch)
         msg = Message(
             **_valid_envelope(intent="StoreBatchTags"),
-            event=EventFields(owner="$sys"),
+            event=EventFields(owner="user-event-id"),
         )
         errs = validate_message(msg)
         assert _find_error(errs, rule="one_of_required", wire_field="event_id")
@@ -317,7 +317,7 @@ class TestStoreBatchTags:
         _enable_validation(monkeypatch)
         msg = Message(
             **_valid_envelope(intent="StoreBatchTags"),
-            event=EventFields(id="evt-1", owner="$sys"),
+            event=EventFields(id="evt-1", owner="user-event-id"),
         )
         errs = validate_message(msg)
         assert _find_error(errs, rule="required", struct_path="neural_memory.tags")
@@ -326,7 +326,7 @@ class TestStoreBatchTags:
         _enable_validation(monkeypatch)
         msg = Message(
             **_valid_envelope(intent="StoreBatchTags"),
-            event=EventFields(id="evt-1", owner="$sys"),
+            event=EventFields(id="evt-1", owner="user-event-id"),
             neural_memory=NeuralMemoryFields(tags=[Tag(key="", value="v")]),
         )
         errs = validate_message(msg)
@@ -336,7 +336,7 @@ class TestStoreBatchTags:
         _enable_validation(monkeypatch)
         msg = Message(
             **_valid_envelope(intent="StoreBatchTags"),
-            event=EventFields(id="evt-1", owner="$sys"),
+            event=EventFields(id="evt-1", owner="user-event-id"),
             neural_memory=NeuralMemoryFields(tags=[Tag(key="k", value=None)]),
         )
         errs = validate_message(msg)
@@ -346,7 +346,7 @@ class TestStoreBatchTags:
         _enable_validation(monkeypatch)
         msg = Message(
             **_valid_envelope(intent="StoreBatchTags"),
-            event=EventFields(id="evt-1", owner="$sys"),
+            event=EventFields(id="evt-1", owner="user-event-id"),
             neural_memory=NeuralMemoryFields(tags=[Tag(key="k", value="v")]),
         )
         errs = validate_message(msg)
@@ -1077,3 +1077,51 @@ class TestFormatHelpers:
         assert obj["wire_field"] == "category"
         assert obj["rule"] == "required"
         assert obj["references"] == ["types.py:LinkFields"]
+
+
+# ===========================================================================
+# OWNER / ID SEMANTICS
+# ===========================================================================
+
+class TestOwnerIdSemantics:
+    def test_store_batch_tags_rejects_sys_owner(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        msg = Message(
+            **_valid_envelope(intent="StoreBatchTags"),
+            event=EventFields(id="evt-1", owner="$sys"),
+            neural_memory=NeuralMemoryFields(tags=[Tag(key="k", value="v")]),
+        )
+        errs = validate_message(msg)
+        assert _find_error(errs, rule="semantic", struct_path="event.owner")
+
+    def test_store_data_rejects_sys_target(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        msg = Message(
+            **_valid_envelope(intent="StoreData"),
+            event=EventFields(id="$sys", owner_unique_id="user-001"),
+        )
+        errs = validate_message(msg)
+        assert _find_error(errs, rule="semantic", struct_path="event.id")
+
+    def test_get_event_owner_not_used_warn(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        msg = Message(
+            **_valid_envelope(intent="GetEvent"),
+            event=EventFields(id="2024.01.15...", owner="$sys"),
+        )
+        errs = validate_message(msg)
+        assert _find_error(errs, rule="semantic")
+
+    def test_store_event_id_at_create_warn(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        msg = Message(
+            **_valid_envelope(intent="StoreEvent"),
+            event=EventFields(
+                owner="$sys",
+                id="should-not-set",
+                location="TERRA",
+                location_separator="|",
+            ),
+        )
+        errs = validate_message(msg)
+        assert _find_error(errs, rule="semantic", struct_path="event.id")

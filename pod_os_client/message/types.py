@@ -312,6 +312,12 @@ class Message:
         """Return the Response.message or empty string if Response is None."""
         return self.response.message if self.response else ""
 
+    def validate(self) -> "ValidationErrors":
+        """Validate this message when PODOS_VALIDATE is enabled."""
+        from pod_os_client.message.validate import ValidationErrors, validate_message
+
+        return validate_message(self)
+
 
 @dataclass(slots=True)
 class BatchEventSpec:

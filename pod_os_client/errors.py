@@ -6,6 +6,8 @@ from typing import Optional
 __all__ = [
     "PodOSError",
     "ConnectionError",
+    "ConnectionLostError",
+    "ReceiveIdleTimeoutError",
     "MessageError",
     "EncodeError",
     "DecodeError",
@@ -49,6 +51,26 @@ class PodOSError(Exception):
 
 class ConnectionError(PodOSError):
     """Connection-related errors."""
+
+    pass
+
+
+class ConnectionLostError(ConnectionError):
+    """Fatal, unrecoverable-on-this-socket condition.
+
+    Raised for hard I/O errors, mid-frame read timeouts, and framing desync. The
+    transport has been marked disconnected and the caller should reconnect/retry.
+    """
+
+    pass
+
+
+class ReceiveIdleTimeoutError(ConnectionError):
+    """Benign idle read timeout.
+
+    Raised when a receive times out with no frame bytes pending; the connection
+    is still considered healthy.
+    """
 
     pass
 

@@ -105,10 +105,66 @@ config = Config(
     # Features (streaming is on by default; set enable_streaming=False to disable)
     enable_concurrent_mode=True,
     enable_reconnection=True,
+
+    # App-level AIP Keepalive (default 30s; 0 or negative disables)
+    keepalive_interval=30.0,
     
     # Logging
     log_level=3,  # 0=None, 1=Error, 2=Warn, 3=Info, 4=Debug
 )
+```
+
+## App-Level Keepalive
+
+The client sends periodic AIP `Keepalive` frames (message_type 18) on the primary connection and idle pooled connections. Configure with `keepalive_interval` (seconds); default is `30.0`. Set to `0` or negative to disable. The asyncio task starts after connect, pauses during reconnect, and stops on `close()`.
+
+## Actor Health Checks (Non-Neural Memory Actors)
+
+Neural Memory Actors are typically probed with store/get intents. **Socket Actors** use the lightweight AIP `StatusRequest` / `Status` pair instead:
+
+| Intent | message_type | Role |
+|---|---|---|
+| `StatusRequest` | 110 | Inbound health probe (envelope + optional `_msg_id`) |
+| `Status` | 3 | Health reply (`_status`, `_msg`, echoed `_msg_id`) |
+
+### Responding to probes (Actor side)
+
+Enable concurrent mode and call `respond_to_health_checks` after connect:
+
+```python
+from pod_os_client import Client, Config
+from pod_os_client.health import respond_to_health_checks
+
+config = Config(
+    host="gateway-lb.example.com",
+    port=62312,
+    gateway_actor_name="zeroth.pod-os.com",
+    client_name="my-socket-actor",
+    enable_concurrent_mode=True,
+)
+client = Client(config)
+await client.connect()
+respond_to_health_checks(client)
+```
+
+### Sending probes (monitor side)
+
+```python
+from uuid import uuid4
+from pod_os_client.message import Message
+from pod_os_client.message.intents import IntentType
+
+probe_id = str(uuid4())
+probe = Message(
+    to="my-socket-actor@zeroth.pod-os.com",
+    from_=f"{client.client_name()}@{client.actor_name()}",
+    intent=IntentType.StatusRequest.name,
+    client_name=client.client_name(),
+    message_id=probe_id,
+)
+resp = await client.send_message(probe)
+assert resp.processing_status() == "OK"
+assert resp.message_id == probe_id
 ```
 
 ## Evolutionary Neural Memory Operations

@@ -116,6 +116,35 @@ All validators check the relevant top-level struct (`msg.event`, `msg.neural_mem
 
 ---
 
+### Owner vs Id semantics (Evolutionary Neural Memory)
+
+Owner (`event.owner` / `event.owner_unique_id`, or `link.owner_event_id` / `link.owner_unique_id`) answers **who created or owns** the event. Id (`event.id` / `event.unique_id`) answers **which event**. These are different semantics:
+
+- **`event.unique_id`**: developer-constructed, deterministic, known before storage; portable across DB instances.
+- **`event.id`**: AIP-generated at storage time from time+location; enables collection by time/location.
+
+Intents fall into four groups:
+
+| Group | Intents | Id semantics | Owner semantics |
+|-------|---------|--------------|-----------------|
+| **Create** | StoreEvent, StoreBatchEvents, LinkEvent, StoreBatchLinks | Set `unique_id` (recommended). Do not pre-set `id` (AIP-generated at storage). | `owner` = pre-existing internal `event.id` **or `$sys`**; `owner_unique_id` = pre-existing `event.unique_id`. |
+| **Apply-to-existing** | StoreBatchTags, StoreData | `id` or `unique_id` = pre-existing target event in this DB (**`$sys` invalid** — not an individual event). | `owner` = pre-existing internal `event.id` (**not `$sys`**) or `owner_unique_id` = pre-existing `event.unique_id`. Owner may differ from the target Id. |
+| **Lookup** | GetEvent, UnlinkEvent | `id` = pre-existing internal `event.id` **or `$sys`**; `unique_id` = pre-existing `event.unique_id`. | **Not used** (ignored if set). |
+| **Search filter** | GetEventsForTags | **Not used** for event identity. | `owner` / `owner_unique_id` filter the tag search. |
+
+**Enforceable checks (`rule: "semantic"`)** — implemented in `pod_os_client/message/validate.py` (and mirrored in Go/Java/Rust validators):
+
+| Severity | Condition | Fix guidance |
+|----------|-----------|--------------|
+| ERROR | StoreBatchTags / StoreData with `owner == "$sys"` | Owner must be an individual pre-existing event Id, not the system pseudo-entity. |
+| ERROR | StoreBatchTags / StoreData with `id == "$sys"` or `unique_id == "$sys"` | `$sys` is not an individual event; use a real target event Id/UniqueId. |
+| WARN | GetEvent / UnlinkEvent with owner fields set | Owner is ignored; remove and use id/unique_id only. |
+| WARN | Create intents with `event.id` (or `link.id`) set | Id is AIP-generated at storage; set `unique_id` for a developer-controlled identifier. |
+
+Runtime-only constraints ("pre-existing in same database") are delivered as enriched `message` / `fix` / `example_code` text on existing `one_of_required` errors, not as hard failures.
+
+---
+
 ### Per-Intent Validation Rules
 
 #### Envelope (all intents)

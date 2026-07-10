@@ -1,8 +1,35 @@
 """Pod-OS client configuration."""
 
-from dataclasses import dataclass
+from __future__ import annotations
 
-__all__ = ["Config"]
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
+__all__ = ["Config", "ReconnectConfig"]
+
+
+@dataclass
+class ReconnectConfig:
+    """Configuration for automatic reconnection behavior.
+
+    Mirrors Go's ReconnectConfig struct.
+    """
+
+    enabled: bool = True
+    max_retries: int = 10
+    initial_backoff: float = 1.0
+    backoff_multiplier: float = 2.0
+    max_backoff: float = 60.0
+
+    def __post_init__(self) -> None:
+        if self.max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if self.initial_backoff <= 0:
+            raise ValueError("initial_backoff must be positive")
+        if self.backoff_multiplier < 1:
+            raise ValueError("backoff_multiplier must be >= 1")
+        if self.max_backoff <= 0:
+            raise ValueError("max_backoff must be positive")
 
 
 @dataclass
@@ -51,7 +78,9 @@ class Config:
     receive_timeout: float = 30.0
 
     # Retry settings
-    max_retries: int = 3
+    # Keep in sync with ReconnectConfig.max_retries (10) so the structured
+    # reconnect config built in __post_init__ has a consistent default.
+    max_retries: int = 10
     initial_backoff: float = 1.0
     backoff_multiplier: float = 2.0
     max_backoff: float = 30.0
@@ -66,8 +95,31 @@ class Config:
     enable_concurrent_mode: bool = True
     enable_reconnection: bool = True
 
+    # Structured reconnect config (built from flat fields if not provided)
+    reconnect_config: ReconnectConfig | None = field(default=None, repr=False)
+
     # Logging
     log_level: int = 0  # 0=None, 1=Error, 2=Warn, 3=Info, 4=Debug
+
+    # App-level AIP Keepalive interval in seconds. None uses the default (30s).
+    # Zero or negative disables keepalive.
+    keepalive_interval: float | None = None
+
+    # Bounds each background receive iteration in concurrent mode. None/zero uses 30s.
+    receive_loop_timeout: float | None = None
+
+    # Liveness backstop when requests are pending but no frame received. None/zero uses 90s.
+    connection_liveness_timeout: float | None = None
+
+    # TCP keepalive tuning (seconds/count). None/zero uses connection-layer defaults.
+    tcp_keep_alive_idle: float | None = None
+    tcp_keep_alive_interval: float | None = None
+    tcp_keep_alive_count: int | None = None
+    tcp_user_timeout: float | None = None
+
+    # Invoked for inbound messages that do not match a pending outbound request when
+    # enable_concurrent_mode is true. Wired before start_receiver in Client.connect.
+    unmatched_message_handler: Callable[..., None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -97,3 +149,32 @@ class Config:
             raise ValueError("pool_max_capacity must be >= pool_initial_capacity")
         if not 0 <= self.log_level <= 4:
             raise ValueError("log_level must be 0-4")
+
+        if self.reconnect_config is None:
+            self.reconnect_config = ReconnectConfig(
+                enabled=self.enable_reconnection,
+                max_retries=self.max_retries,
+                initial_backoff=self.initial_backoff,
+                backoff_multiplier=self.backoff_multiplier,
+                max_backoff=self.max_backoff,
+            )
+
+    def get_keepalive_interval(self) -> float:
+        """Return keepalive interval in seconds; 0 disables keepalive."""
+        if self.keepalive_interval is not None:
+            if self.keepalive_interval <= 0:
+                return 0.0
+            return self.keepalive_interval
+        return 30.0
+
+    def get_receive_loop_timeout(self) -> float:
+        """Return receive-loop poll timeout in seconds."""
+        if self.receive_loop_timeout is None or self.receive_loop_timeout <= 0:
+            return 30.0
+        return self.receive_loop_timeout
+
+    def get_connection_liveness_timeout(self) -> float:
+        """Return pending-request liveness backstop in seconds."""
+        if self.connection_liveness_timeout is None or self.connection_liveness_timeout <= 0:
+            return 90.0
+        return self.connection_liveness_timeout
