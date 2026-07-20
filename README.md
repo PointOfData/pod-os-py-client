@@ -118,6 +118,8 @@ config = Config(
 
 The client sends periodic AIP `Keepalive` frames (message_type 18) on the primary connection and idle pooled connections. Configure with `keepalive_interval` (seconds); default is `30.0`. Set to `0` or negative to disable. The asyncio task starts after connect, pauses during reconnect, and stops on `close()`.
 
+On explicit close (`await client.close()` or async context manager exit), the client sends a fire-and-forget AIP `GatewayDisconnect` frame (message_type 6) on the ID-authenticated primary connection, then closes the TCP socket. Unexpected connection loss and reconnect teardown do not send Disconnect. Unauthenticated pool sockets are closed without Disconnect because they never completed a GatewayId handshake.
+
 ## Actor Health Checks (Non-Neural Memory Actors)
 
 Neural Memory Actors are typically probed with store/get intents. **Socket Actors** use the lightweight AIP `StatusRequest` / `Status` pair instead:

@@ -172,6 +172,24 @@ class Client:
         async with self._send_lock:
             await self._connection.send(encoded)
 
+    async def send_disconnect(self) -> None:
+        """Send an app-level AIP GatewayDisconnect (message_type 6) on the primary connection."""
+        if not self._connection or not self._connection.is_connected():
+            return
+
+        msg = Message(
+            to=f"$system@{self.config.gateway_actor_name}",
+            from_=f"{self.config.client_name}@{self.config.gateway_actor_name}",
+            intent=IntentType.GatewayDisconnect.name,
+            client_name=self.config.client_name,
+            message_id=str(uuid4()),
+        )
+        encoded = encode_message(msg, IntentType.GatewayDisconnect, self._conversation_id)
+        async with self._send_lock:
+            if not self._connection or not self._connection.is_connected():
+                return
+            await self._connection.send(encoded)
+
     async def send_control_message(self, data: bytes) -> None:
         """Send a pre-encoded control message without waiting for a response."""
         if not self._connection or not self._connected:
@@ -519,6 +537,10 @@ class Client:
             await self._pool.close_all()
             self._pool = None
         if self._connection:
+            try:
+                await self.send_disconnect()
+            except Exception as exc:
+                logger.warning("failed to send GatewayDisconnect before close: %s", exc)
             await self._connection.close()
             self._connection = None
 

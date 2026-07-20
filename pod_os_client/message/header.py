@@ -28,6 +28,8 @@ def construct_header(msg: "Message", intent: "Intent", connection_id_uuid: str) 
         return _gateway_identify_connection_header(msg)
     elif intent_name == "GatewayStreamOn":
         return _gateway_stream_on_header(msg)
+    elif intent_name == "GatewayDisconnect":
+        return _gateway_disconnect_header(msg)
     elif intent_name == "GatewayStreamOff":
         return _gateway_stream_off_header(msg)
     elif intent_name == "ActorEcho":
@@ -81,6 +83,13 @@ def _gateway_identify_connection_header(msg: "Message") -> str:
 
 def _gateway_stream_on_header(msg: "Message") -> str:
     """Construct Gateway Stream On header."""
+    if msg.message_id:
+        return f"_msg_id={msg.message_id}"
+    return ""
+
+
+def _gateway_disconnect_header(msg: "Message") -> str:
+    """Construct Gateway Disconnect header."""
     if msg.message_id:
         return f"_msg_id={msg.message_id}"
     return ""
