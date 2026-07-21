@@ -50,3 +50,6 @@ dmypy.json
 
 # Ruff
 .ruff_cache/
+
+# Client-specific support scripts (not part of the published package)
+client-support/

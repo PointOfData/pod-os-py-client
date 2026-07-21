@@ -6,7 +6,7 @@ Populates a Config from INI key-value pairs as parsed by Pod-OS actor binaries
 Recognized keys:
 
     host, port, agent (gateway_actor_name), client (client_name),
-    stream_messages, concurrent_mode,
+    stream_messages, concurrent_mode, external_receiver,
     reconnect_enabled, reconnect_max_retries, reconnect_initial_backoff,
     reconnect_backoff_multiplier, reconnect_max_backoff,
     dial_timeout, send_timeout, receive_timeout,
@@ -55,6 +55,8 @@ def config_from_ini(kvs: dict[str, str]) -> Config:
             kwargs["enable_streaming"] = _parse_bool(value) or None
         elif k == "concurrent_mode":
             kwargs["enable_concurrent_mode"] = _parse_bool(value)
+        elif k == "external_receiver":
+            kwargs["external_receiver"] = _parse_bool(value)
         elif k == "dial_timeout":
             secs = _parse_float(value)
             if secs > 0:

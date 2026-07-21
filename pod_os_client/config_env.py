@@ -10,7 +10,7 @@ Recognized variables:
     PODOS_RECONNECT_ENABLED, PODOS_RECONNECT_MAX_RETRIES,
     PODOS_RECONNECT_INITIAL_BACKOFF, PODOS_RECONNECT_MAX_BACKOFF,
     PODOS_RECONNECT_BACKOFF_MULTIPLIER,
-    PODOS_CONCURRENT_MODE,
+    PODOS_CONCURRENT_MODE, PODOS_EXTERNAL_RECEIVER,
     PODOS_DIAL_TIMEOUT, PODOS_SEND_TIMEOUT, PODOS_RECEIVE_TIMEOUT,
     PODOS_LOG_LEVEL
 
@@ -51,6 +51,10 @@ def config_from_env() -> Config:
     concurrent = os.getenv("PODOS_CONCURRENT_MODE")
     if concurrent:
         kwargs["enable_concurrent_mode"] = _parse_bool(concurrent)
+
+    external_receiver = os.getenv("PODOS_EXTERNAL_RECEIVER")
+    if external_receiver:
+        kwargs["external_receiver"] = _parse_bool(external_receiver)
 
     dial_timeout = os.getenv("PODOS_DIAL_TIMEOUT")
     if dial_timeout:

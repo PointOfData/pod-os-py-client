@@ -150,8 +150,9 @@ class Client:
             )
             await self._pool.initialize()
 
-        # Start background receiver for concurrent mode
-        if self.config.enable_concurrent_mode:
+        # Start background receiver for concurrent mode — skipped when the
+        # application owns receive() (external_receiver / Gateway actor shells).
+        if self.config.enable_concurrent_mode and not self.config.external_receiver:
             self.start_receiver()
 
         self._start_keepalive_loop()
@@ -196,6 +197,42 @@ class Client:
             raise PodOSConnectionError("client not connected")
         async with self._send_lock:
             await self._connection.send(data)
+
+    async def send_no_wait(self, msg: Message) -> None:
+        """Encode and send a message without calling ``receive()``.
+
+        Safe with ``Config.external_receiver=True`` and with an application
+        Gateway receive loop that is the sole ``connection.receive()`` waiter.
+        Does not auto-reconnect (reconnect must pause the external receiver).
+        """
+        if not self._connected or not self._connection:
+            raise PodOSConnectionError("client not connected")
+
+        from pod_os_client.message.intents import intent_from_message_type
+
+        intent = intent_from_message_type(msg.intent)
+        if not intent:
+            raise ValueError(f"unknown intent: {msg.intent}")
+
+        encoded = encode_message(msg, intent, self._conversation_id)
+        async with self._send_lock:
+            if not self._connection or not self._connected:
+                raise PodOSConnectionError("client not connected")
+            await self._connection.send(encoded)
+
+    def deliver_response(self, msg: Message) -> bool:
+        """Complete a pending future from an external receive loop.
+
+        Returns True if ``msg.message_id`` matched a waiting future.
+        Prefer registering futures yourself when using ``send_no_wait``; this
+        helper is for apps that share the client's ``_pending_responses`` map.
+        """
+        fut = self._pending_responses.pop(msg.message_id, None)
+        if fut is None:
+            return False
+        if not fut.done():
+            fut.set_result(msg)
+        return True
 
     async def _create_pool_connection(self) -> ConnectionClient:
         conn = ConnectionClient(
@@ -259,7 +296,15 @@ class Client:
         Raises:
             ConnectionError: If not connected or send fails
             TimeoutError: If receive times out
+            RuntimeError: If ``external_receiver=True`` (use ``send_no_wait``)
         """
+        if self.config.external_receiver:
+            raise RuntimeError(
+                "send_message cannot wait for a response when external_receiver=True "
+                "(another coroutine owns connection.receive()). Use send_no_wait() and "
+                "route responses in your receive loop (optionally via deliver_response)."
+            )
+
         if not self._connected or not self._connection:
             rc = self.config.reconnect_config
             if rc is not None and rc.enabled and self._reconnecting:
@@ -344,6 +389,11 @@ class Client:
 
     def start_receiver(self) -> None:
         """Start background receiver task for concurrent mode."""
+        if self.config.external_receiver:
+            raise RuntimeError(
+                "start_receiver() is disabled when external_receiver=True; "
+                "the application must own connection.receive()"
+            )
         if self._receiver_task is None or self._receiver_task.done():
             self._receiver_task = asyncio.create_task(self._receive_loop())
 
@@ -436,9 +486,17 @@ class Client:
         """Attempt a single reconnection cycle (close, reconnect, re-authenticate).
 
         Used by the sync send path to retry a message once after a connection error.
+        Disabled when ``external_receiver=True`` — auth ``receive()`` would race the
+        application receive loop; the app must pause receive, then call reconnect().
         """
         if self._closed:
             return
+        if self.config.external_receiver:
+            self._connected = False
+            raise ConnectionLostError(
+                "connection lost with external_receiver=True; pause your receive "
+                "loop and call Client.reconnect() explicitly"
+            )
         if self._connection:
             await self._connection.close()
 
@@ -447,9 +505,39 @@ class Client:
         except Exception:
             self._connected = False
 
+    async def reconnect(self) -> None:
+        """Explicit reconnect for ``external_receiver`` apps.
+
+        Caller must have stopped / awaited its ``connection.receive()`` loop
+        before calling this. Performs close + connect (ID handshake receive).
+        """
+        if self._closed:
+            raise PodOSConnectionError("client is closed")
+        if self._keepalive_task:
+            self._keepalive_task.cancel()
+            try:
+                await self._keepalive_task
+            except asyncio.CancelledError:
+                pass
+            self._keepalive_task = None
+        if self._connection:
+            try:
+                await self._connection.close()
+            except Exception:
+                pass
+            self._connection = None
+        self._connected = False
+        await self.connect()
+
     async def _reconnect(self, trigger_err: Exception | None = None) -> None:
         """Attempt to reconnect with exponential backoff."""
         if self._closed:
+            return
+        if self.config.external_receiver:
+            # Background auto-reconnect would race the app's receive loop.
+            self._connected = False
+            await self._fail_all_pending()
+            self._emit_state(ConnectionState.DISCONNECTED, trigger_err)
             return
         self._reconnecting = True
         self._reconnect_attempt = 0

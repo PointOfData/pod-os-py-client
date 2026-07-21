@@ -58,6 +58,10 @@ class Config:
             sends STREAM ON after successful ID handshake; False does not send it.
         enable_concurrent_mode: Enable concurrent message handling
         enable_reconnection: Enable automatic reconnection
+        external_receiver: App owns ``connection.receive()`` (Gateway actor loops).
+            When True the client never starts its receive loop, ``send_message``
+            will not call ``receive()``, and send-path auto-reconnect is disabled
+            (reconnect must pause the app receive loop first). Use ``send_no_wait``.
         log_level: Logging level (0=None, 1=Error, 2=Warn, 3=Info, 4=Debug)
     """
 
@@ -94,6 +98,8 @@ class Config:
     enable_streaming: bool | None = None  # None or True = send STREAM ON; False = do not
     enable_concurrent_mode: bool = True
     enable_reconnection: bool = True
+    # App owns the single receive() waiter (mesh / Gateway actor shells).
+    external_receiver: bool = False
 
     # Structured reconnect config (built from flat fields if not provided)
     reconnect_config: ReconnectConfig | None = field(default=None, repr=False)

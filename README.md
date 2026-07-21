@@ -105,6 +105,8 @@ config = Config(
     # Features (streaming is on by default; set enable_streaming=False to disable)
     enable_concurrent_mode=True,
     enable_reconnection=True,
+    # App owns connection.receive() (Gateway actor / mesh shells). Use send_no_wait().
+    external_receiver=False,
 
     # App-level AIP Keepalive (default 30s; 0 or negative disables)
     keepalive_interval=30.0,
@@ -112,6 +114,30 @@ config = Config(
     # Logging
     log_level=3,  # 0=None, 1=Error, 2=Warn, 3=Info, 4=Debug
 )
+```
+
+## External receiver (Gateway actor / mesh shells)
+
+When your process runs its own `connection.receive()` loop (e.g. ActorRequest
+dispatch), set `external_receiver=True`. The client then:
+
+- does **not** start its background receive loop
+- rejects `send_message()` / `start_receiver()` (they would race `receive()`)
+- exposes `send_no_wait(msg)` for fire-and-forget encode+send
+- disables send-path auto-reconnect; pause your loop, then `await client.reconnect()`
+
+```python
+config = Config(
+    host="localhost",
+    port=62312,
+    client_name="ingest-worker",
+    enable_concurrent_mode=False,
+    external_receiver=True,
+)
+client = Client(config)
+await client.connect()
+await client.send_no_wait(actor_request_msg)
+# your loop: data = await client._connection.receive()
 ```
 
 ## App-Level Keepalive
