@@ -834,6 +834,16 @@ def parse_store_batch_events_payload(msg: Message) -> tuple[StoreBatchEventRecor
         # Parse each line as tab-separated key=value pairs
         record_map = _parse_tab_delimited_line(line)
 
+        if record.status == "" and "_status" in record_map:
+            record.status = record_map["_status"]
+        if record.message == "" and "_msg" in record_map:
+            record.message = record_map["_msg"]
+        if record.event_count == 0 and "_count" in record_map:
+            try:
+                record.event_count = int(record_map["_count"])
+            except ValueError:
+                pass
+
         # Extract Event fields from each line
         event = _decode_event_fields(record_map)
         # Capture per-event status if present
@@ -841,6 +851,9 @@ def parse_store_batch_events_payload(msg: Message) -> tuple[StoreBatchEventRecor
             event.status = record_map["_status"]
 
         record.event_results.append(event)
+
+    if record.event_count == 0:
+        record.event_count = len(record.event_results)
 
     return record, True
 

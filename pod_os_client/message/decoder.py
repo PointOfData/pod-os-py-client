@@ -14,6 +14,7 @@ from pod_os_client.message.types import (
     Message,
     PayloadFields,
     ResponseFields,
+    StoreBatchEventRecord,
 )
 
 __all__ = ["decode_message"]
@@ -61,6 +62,91 @@ def _decode_header(header_str: str) -> dict[str, str]:
             header_map[key.strip()] = value.strip()
 
     return header_map
+
+
+def _header_int(header_map: dict[str, str], key: str) -> int | None:
+    """Parse an integer header field, returning None when absent or invalid."""
+    if key not in header_map:
+        return None
+    try:
+        return int(header_map[key])
+    except ValueError:
+        return None
+
+
+def _populate_response_counts(
+    response: ResponseFields,
+    header_map: dict[str, str],
+    db_cmd: str,
+) -> None:
+    """Map header count fields based on NeuralMemory db command type."""
+    if db_cmd in ("store", "store_batch", "tag_store_batch", "link", "unlink"):
+        count = _header_int(header_map, "_count")
+        if count is not None:
+            response.total_events = count
+    elif db_cmd == "link_batch":
+        for key in ("_total_link_requests_found", "total_link_requests_found"):
+            count = _header_int(header_map, key)
+            if count is not None:
+                response.total_events = count
+                break
+    elif db_cmd == "events_for_tag":
+        count = _header_int(header_map, "_count")
+        if count is not None:
+            response.total_events = count
+        else:
+            hits = _header_int(header_map, "_total_event_hits")
+            if hits is not None:
+                response.total_events = hits
+    else:
+        for key in (
+            "_total_event_hits",
+            "_count",
+            "total_link_requests_found",
+            "_total_link_requests_found",
+        ):
+            count = _header_int(header_map, key)
+            if count is not None:
+                response.total_events = count
+                break
+
+    if db_cmd == "link_batch":
+        for key in ("_links_ok", "links_ok"):
+            count = _header_int(header_map, key)
+            if count is not None:
+                response.storage_success_count = count
+                break
+        for key in ("_links_with_errors", "links_with_errors"):
+            count = _header_int(header_map, key)
+            if count is not None:
+                response.storage_error_count = count
+                break
+
+
+def _finalize_store_batch_response(
+    response: ResponseFields,
+    batch_record: StoreBatchEventRecord,
+) -> None:
+    """Derive batch store counts from parsed per-event payload results."""
+    if batch_record.event_count > 0:
+        response.total_events = batch_record.event_count
+    elif batch_record.event_results:
+        batch_record.event_count = len(batch_record.event_results)
+        response.total_events = batch_record.event_count
+
+    ok_count = sum(
+        1 for event in batch_record.event_results
+        if (event.status or "").upper() == "OK"
+    )
+    err_count = sum(
+        1 for event in batch_record.event_results
+        if (event.status or "").upper() not in ("", "OK")
+    )
+    if ok_count or err_count:
+        response.storage_success_count = ok_count
+        response.storage_error_count = err_count
+    elif response.status.upper() == "OK" and response.total_events > 0:
+        response.storage_success_count = response.total_events
 
 
 def _decode_event_fields_from_header(header_map: dict[str, str]) -> EventFields:
@@ -324,52 +410,7 @@ def decode_message(data: bytes) -> Message:
             type=header_map.get("_type", ""),
         )
 
-        # Map all response count fields
-        # Total events (multiple possible field names)
-        if "_total_event_hits" in header_map:
-            try:
-                response.total_events = int(header_map["_total_event_hits"])
-            except ValueError:
-                pass
-        elif "_count" in header_map:
-            try:
-                response.total_events = int(header_map["_count"])
-            except ValueError:
-                pass
-        elif "total_link_requests_found" in header_map:
-            try:
-                response.total_events = int(header_map["total_link_requests_found"])
-            except ValueError:
-                pass
-        elif "_total_link_requests_found" in header_map:
-            try:
-                response.total_events = int(header_map["_total_link_requests_found"])
-            except ValueError:
-                pass
-
-        # Storage success count
-        if "links_ok" in header_map:
-            try:
-                response.storage_success_count = int(header_map["links_ok"])
-            except ValueError:
-                pass
-        elif "_links_ok" in header_map:
-            try:
-                response.storage_success_count = int(header_map["_links_ok"])
-            except ValueError:
-                pass
-
-        # Storage error count
-        if "links_with_errors" in header_map:
-            try:
-                response.storage_error_count = int(header_map["links_with_errors"])
-            except ValueError:
-                pass
-        elif "_links_with_errors" in header_map:
-            try:
-                response.storage_error_count = int(header_map["_links_with_errors"])
-            except ValueError:
-                pass
+        _populate_response_counts(response, header_map, command)
 
         # Pagination fields
         if "_start_result" in header_map:
@@ -437,8 +478,9 @@ def decode_message(data: bytes) -> Message:
 
             elif intent_name in ("StoreBatchEvents", "StoreBatchEventsResponse"):
                 batch_record, ok = parse_store_batch_events_payload(msg)
-                if ok:
+                if ok and batch_record is not None:
                     msg.response.store_batch_event_record = batch_record
+                    _finalize_store_batch_response(msg.response, batch_record)
 
             elif intent_name in ("StoreBatchLinks", "StoreBatchLinksResponse"):
                 link_record, ok = parse_link_event_batch_payload(msg)
