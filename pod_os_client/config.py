@@ -115,6 +115,7 @@ class Config:
     receive_loop_timeout: float | None = None
 
     # Liveness backstop when requests are pending but no frame received. None/zero uses 90s.
+    # Negative disables the backstop.
     connection_liveness_timeout: float | None = None
 
     # TCP keepalive tuning (seconds/count). None/zero uses connection-layer defaults.
@@ -180,7 +181,14 @@ class Config:
         return self.receive_loop_timeout
 
     def get_connection_liveness_timeout(self) -> float:
-        """Return pending-request liveness backstop in seconds."""
-        if self.connection_liveness_timeout is None or self.connection_liveness_timeout <= 0:
+        """Return pending-request liveness backstop in seconds.
+
+        Returns 0 when the backstop is explicitly disabled (negative value).
+        """
+        if self.connection_liveness_timeout is None:
+            return 90.0
+        if self.connection_liveness_timeout < 0:
+            return 0.0
+        if self.connection_liveness_timeout == 0:
             return 90.0
         return self.connection_liveness_timeout

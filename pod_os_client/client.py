@@ -431,7 +431,8 @@ class Client:
                 # Benign idle timeout: still alive unless we have pending requests
                 # and have heard nothing for too long (liveness backstop).
                 if (
-                    not self._pending_responses
+                    liveness_timeout == 0
+                    or not self._pending_responses
                     or (loop.time() - last_activity) <= liveness_timeout
                 ):
                     continue

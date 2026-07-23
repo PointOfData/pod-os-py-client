@@ -19,6 +19,31 @@ def test_config_disabled_keepalive_interval() -> None:
     assert cfg.get_keepalive_interval() == 0.0
 
 
+def test_config_default_connection_liveness_timeout() -> None:
+    cfg = Config(host="127.0.0.1", port=62312, client_name="test")
+    assert cfg.get_connection_liveness_timeout() == 90.0
+
+
+def test_config_custom_connection_liveness_timeout() -> None:
+    cfg = Config(
+        host="127.0.0.1",
+        port=62312,
+        client_name="test",
+        connection_liveness_timeout=15.0,
+    )
+    assert cfg.get_connection_liveness_timeout() == 15.0
+
+
+def test_config_disabled_connection_liveness_timeout() -> None:
+    cfg = Config(
+        host="127.0.0.1",
+        port=62312,
+        client_name="test",
+        connection_liveness_timeout=-1.0,
+    )
+    assert cfg.get_connection_liveness_timeout() == 0.0
+
+
 def test_keepalive_message_shape() -> None:
     cfg = Config(
         host="127.0.0.1",
