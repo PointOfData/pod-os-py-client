@@ -108,10 +108,11 @@ class Client:
         encoded = encode_message(auth_msg, IntentType.GatewayId, self._conversation_id)
         await self._connection.send(encoded)
 
-        # Receive authentication response
+        # Receive authentication response (small frame; body_timeout caps total wait).
         try:
-            response_data = await asyncio.wait_for(
-                self._connection.receive(), timeout=self.config.receive_timeout
+            response_data = await self._connection.receive(
+                timeout=self.config.get_receive_loop_timeout(),
+                body_timeout=self.config.receive_timeout,
             )
             auth_response = decode_message(response_data)
 
@@ -122,9 +123,13 @@ class Client:
                     error_msg = "Authentication rejected by Gateway"
                 raise AuthenticationError(error_msg)
 
-        except TimeoutError:
+        except (ReceiveIdleTimeoutError, ConnectionLostError) as exc:
             await self._connection.close()
-            raise PodOSTimeoutError(f"authentication timeout after {self.config.receive_timeout}s") from None
+            if isinstance(exc, ReceiveIdleTimeoutError):
+                raise PodOSTimeoutError(
+                    f"authentication timeout after {self.config.receive_timeout}s"
+                ) from exc
+            raise
 
         # Send STREAM ON when streaming is enabled (default); only skip when enable_streaming is False
         if self.config.enable_streaming is not False:
@@ -366,8 +371,9 @@ class Client:
             # reconnect-and-retry on a fatal connection error.
             await self._connection.send(encoded)
             try:
-                response_data = await asyncio.wait_for(
-                    self._connection.receive(), timeout=self.config.receive_timeout
+                response_data = await self._connection.receive(
+                    timeout=self.config.get_receive_loop_timeout(),
+                    body_timeout=self.config.receive_timeout,
                 )
                 return decode_message(response_data)
             except ConnectionLostError as e:
@@ -379,13 +385,18 @@ class Client:
                         # Re-send after reconnection
                         encoded = encode_message(msg, intent, self._conversation_id)
                         await self._connection.send(encoded)
-                        response_data = await asyncio.wait_for(
-                            self._connection.receive(), timeout=self.config.receive_timeout
+                        response_data = await self._connection.receive(
+                            timeout=self.config.get_receive_loop_timeout(),
+                            body_timeout=self.config.receive_timeout,
                         )
                         return decode_message(response_data)
                 raise
-            except TimeoutError:
-                raise PodOSTimeoutError(f"receive timeout after {self.config.receive_timeout}s") from None
+            except (ReceiveIdleTimeoutError, ConnectionLostError) as exc:
+                if isinstance(exc, ReceiveIdleTimeoutError):
+                    raise PodOSTimeoutError(
+                        f"receive timeout after {self.config.receive_timeout}s"
+                    ) from exc
+                raise
 
     def start_receiver(self) -> None:
         """Start background receiver task for concurrent mode."""
@@ -410,7 +421,10 @@ class Client:
         last_activity = loop.time()
         while self._connected and self._connection:
             try:
-                data = await self._connection.receive(timeout=idle_timeout)
+                data = await self._connection.receive(
+                    timeout=idle_timeout,
+                    body_timeout=None,
+                )
                 last_activity = loop.time()
                 msg = decode_message(data)
 

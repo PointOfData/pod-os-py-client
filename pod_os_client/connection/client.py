@@ -193,20 +193,26 @@ class ConnectionClient:
             self._connected = False
             raise ConnectionLostError(f"send failed: {e}") from e
 
-    async def receive(self, timeout: Optional[float] = None) -> bytes:
-        """Receive data with optional timeout.
-
-        Reads a complete Pod-OS message using the 9-byte length prefix.
+    async def receive(
+        self,
+        timeout: Optional[float] = None,
+        *,
+        body_timeout: Optional[float] = None,
+    ) -> bytes:
+        """Receive a complete length-prefixed Pod-OS frame.
 
         Args:
-            timeout: Receive timeout in seconds (None for no timeout)
+            timeout: Idle timeout for the 9-byte length prefix only. Raises
+                ``ReceiveIdleTimeoutError`` when no prefix arrives in time.
+            body_timeout: Timeout for the frame body after the prefix is read.
+                ``None`` means no limit (required for large buffered replies).
 
         Returns:
-            Received data bytes
+            Received data bytes (prefix + body)
 
         Raises:
-            ConnectionError: If not connected or receive fails
-            asyncio.TimeoutError: If receive times out
+            ConnectionError: If not connected or receive fails mid-frame
+            ReceiveIdleTimeoutError: Idle timeout before a prefix arrives
         """
         if not self._connected or not self._reader:
             raise PodOSConnectionError("not connected")
@@ -258,13 +264,15 @@ class ConnectionClient:
             return length_bytes
         try:
             message_data = await asyncio.wait_for(
-                self._reader.readexactly(remaining), timeout=timeout
+                self._reader.readexactly(remaining), timeout=body_timeout
             )
             return length_bytes + message_data
         except asyncio.TimeoutError:
             self._connected = False
             raise ConnectionLostError(
-                f"receive timeout mid-frame after {timeout}s" if timeout else "receive timeout mid-frame"
+                f"receive timeout mid-frame after {body_timeout}s"
+                if body_timeout
+                else "receive timeout mid-frame"
             ) from None
         except asyncio.IncompleteReadError as e:
             self._connected = False

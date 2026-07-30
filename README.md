@@ -137,7 +137,15 @@ config = Config(
 client = Client(config)
 await client.connect()
 await client.send_no_wait(actor_request_msg)
-# your loop: data = await client._connection.receive()
+# Idle poll on prefix only; do NOT asyncio.wait_for(receive(), 1.0) — that
+# cancels mid-frame on large buffered NM replies (get_match_links).
+from pod_os_client.errors import ReceiveIdleTimeoutError
+while running:
+    try:
+        data = await client._connection.receive(timeout=1.0, body_timeout=None)
+    except ReceiveIdleTimeoutError:
+        continue
+    # decode + route ...
 ```
 
 ## App-Level Keepalive

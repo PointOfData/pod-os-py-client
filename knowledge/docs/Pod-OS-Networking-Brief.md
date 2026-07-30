@@ -48,7 +48,10 @@ When `external_receiver=True`, the client:
 | One coroutine owns `client._connection.receive()` | `client.send_message()` (calls `receive()`) |
 | `await client.send_no_wait(msg)` for outbound | `client.start_receiver()` |
 | Route inbound responses in your loop | Let client auto-reconnect during receive |
+| `receive(timeout=1.0, body_timeout=None)` for idle poll | `asyncio.wait_for(receive(), 1.0)` — cancels mid-frame |
 | `await client.reconnect()` after pausing receive | Encode+send via raw socket bypassing send lock |
+
+**Large frames:** `Connection.receive(timeout=…)` applies only to waiting for the 9-byte length prefix. The body uses `body_timeout` (default `None`). Buffered Neural Memory replies with `get_match_links=Y` routinely exceed 1s — never wrap the full `receive()` in a short `asyncio.wait_for`.
 
 ---
 
@@ -69,10 +72,14 @@ async def send_and_wait(msg: Message, timeout: float) -> Message:
     finally:
         pending.pop(msg.message_id, None)
 
+```python
+from pod_os_client.errors import ReceiveIdleTimeoutError
+
 while running:
     try:
-        raw = await asyncio.wait_for(client._connection.receive(), timeout=1.0)
-    except asyncio.TimeoutError:
+        # Idle poll on prefix only; body_timeout=None for large NM buffers.
+        raw = await client._connection.receive(timeout=1.0, body_timeout=None)
+    except ReceiveIdleTimeoutError:
         continue
     except ConnectionError:
         await client.reconnect()   # only when NOT inside receive()
