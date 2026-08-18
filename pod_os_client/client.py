@@ -213,6 +213,8 @@ class Client:
         if not self._connected or not self._connection:
             raise PodOSConnectionError("client not connected")
 
+        self._normalize_message_from(msg)
+
         from pod_os_client.message.intents import intent_from_message_type
 
         intent = intent_from_message_type(msg.intent)
@@ -317,6 +319,8 @@ class Client:
                     raise PodOSConnectionError("connection to gateway was lost during request")
             else:
                 raise PodOSConnectionError("client not connected")
+
+        self._normalize_message_from(msg)
 
         # Determine intent
         from pod_os_client.message.intents import intent_from_message_type
@@ -728,6 +732,18 @@ class Client:
             Client name from configuration
         """
         return self.config.client_name
+
+    def from_address(self) -> str:
+        """Sender routing identity for this connection: ``{client}@{gateway}``."""
+        return f"{self.config.client_name}@{self.config.gateway_actor_name}"
+
+    def _normalize_message_from(self, msg: Message) -> None:
+        """Ensure ``client_name`` and ``from_`` use the connection gateway identity."""
+        expected_from = self.from_address()
+        if msg.client_name != self.config.client_name:
+            msg.client_name = self.config.client_name
+        if msg.from_ != expected_from:
+            msg.from_ = expected_from
 
     def actor_name(self) -> str:
         """Get gateway actor name.

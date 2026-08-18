@@ -40,7 +40,9 @@ class Config:
         host: Server hostname or IP address
         port: Server port number
         network: Network type ('tcp', 'udp', or 'unix')
-        gateway_actor_name: Name of the gateway actor
+        gateway_actor_name: Connection gateway FQN (socket identity). Used for GatewayId
+            and envelope ``from`` addresses—not the ``to`` routing domain when
+            peer-routing to actors on other gateways.
         client_name: Unique client identifier
         passcode: Authentication passcode
         user_name: Authentication username
