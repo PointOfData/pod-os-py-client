@@ -30,42 +30,42 @@ pip install pod-os-py-client[uvloop]
 
 ## Quick Start
 
+### Connect to a hosted gateway
+
+1. Dial the **chosen** gateway's TCP endpoint (`host:62312`).
+2. Set `gateway_actor_name` to **that gateway's FQN** (the connection gateway you dialed — any gateway you are permitted to use; not necessarily the actor's `@domain`).
+3. Use a unique `client_name` per TCP connection. The SDK sets `From = client_name@<dialed-gateway-FQN>` (`client.from_address()`). Leave `from_` empty or equal to `from_address()` — a mismatched `from_` raises `ValueError`, not silently rewritten. `gateway_actor_name` is required (no default).
+4. Keep roughly **8–10 concurrent** ENM requests per connection when `enable_concurrent_mode` is true; higher fan-out can time out silently.
+4. Omit `user_name` / `passcode` unless that gateway's INI requires them. These are optional AIP fields, not Auth0 or dashboard OAuth tokens.
+5. If `GatewayId` succeeds but a request times out, the gateway likely could not route the reply — check unique `client_name` and `From`. This is not an authentication failure.
+
 ```python
 import asyncio
+from uuid import uuid4
 from pod_os_client import Client, Config
+from pod_os_client.message.intents import IntentType
+from pod_os_client.message.types import Message
 
 async def main():
-    # Configure client
     config = Config(
-        host="localhost",
-        port=8080,
-        client_name="my_client",
-        passcode="secret",
-        enable_concurrent_mode=True
+        host="gateway-nlb.example.com",
+        port=62312,
+        gateway_actor_name="zeroth.customer.example.com",
+        client_name=f"my-app-{uuid4().hex[:8]}",
+        enable_concurrent_mode=True,
     )
-    
-    # Create and connect client
-    client = Client(config)
-    await client.connect()
-    
-    # Send a message
-    from pod_os_client.message import Message
-    from uuid import uuid4
-    
-    msg = Message(
-        intent="ActorEcho",
-        payload={"message": "Hello, Pod-OS!"},
-        message_id=uuid4()
-    )
-    
-    response = await client.send_message(msg)
-    print(f"Response: {response.payload}")
-    
-    # Close connection
-    await client.close()
+    async with Client(config) as client:
+        msg = Message(
+            to="Foobar@zeroth.customer.example.com",
+            from_=client.from_address(),
+            intent=IntentType.GetEvent.name,
+            client_name=client.client_name(),
+            message_id=str(uuid4()),
+        )
+        response = await client.send_message(msg)
+        print(response.processing_status())
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
 ## Configuration
@@ -80,11 +80,10 @@ config = Config(
     host="localhost",
     port=8080,
     network="tcp",  # 'tcp', 'udp', or 'unix'
+    gateway_actor_name="zeroth.example.com",
     
-    # Authentication
+    # Identity (passcode/user_name optional — omit unless gateway INI requires them)
     client_name="my_client",
-    passcode="secret",
-    user_name="user",
     
     # Timeouts
     dial_timeout=10.0,

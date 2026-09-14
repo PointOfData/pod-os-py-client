@@ -23,6 +23,14 @@ The Pod-OS model is concurrent, distributed processing. Each Gateway manages mul
 
 Use the `pod_os_client` package to connect and send messages:
 
+### Connect to a hosted gateway
+
+1. Dial the **chosen** gateway's TCP endpoint (`host:62312`).
+2. Set `gateway_actor_name` to **that gateway's FQN** (the connection gateway you dialed).
+3. Use a unique `client_name` per TCP connection. Set `From = client_name@<dialed-gateway-FQN>` (`client.from_address()`).
+4. Omit `user_name` / `passcode` unless that gateway's INI requires them. Not Auth0 credentials.
+5. If `GatewayId` succeeds but a request times out, check unique `client_name` and `From` — reply routing, not auth.
+
 ```python
 import asyncio
 from uuid import uuid4
@@ -32,17 +40,15 @@ from pod_os_client.message.types import Message, PayloadFields
 
 async def main():
     config = Config(
-        host="localhost",
+        host="gateway-nlb.example.com",
         port=62312,
         client_name="MyClient",
-        gateway_actor_name="zeroth.example.com",
-        passcode="your_passcode",
-        user_name="your_username",
+        gateway_actor_name="zeroth.customer.example.com",
     )
     async with Client(config) as client:
         msg = Message(
-            to="mem@zeroth.example.com",
-            from_=f"{config.client_name}@{config.gateway_actor_name}",
+            to="mem@zeroth.customer.example.com",
+            from_=client.from_address(),
             intent=IntentType.GetEvent.name,
             client_name=config.client_name,
             message_id=str(uuid4()),

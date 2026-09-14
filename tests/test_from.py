@@ -21,7 +21,9 @@ def test_from_address() -> None:
     assert _client().from_address() == "my-client@zeroth.pod-os.com"
 
 
-def test_normalize_message_from_uses_connection_gateway() -> None:
+def test_normalize_message_from_rejects_disagreeing_from() -> None:
+    import pytest
+
     client = _client()
     msg = Message(
         to="kb@skills.pod-os.com",
@@ -29,9 +31,8 @@ def test_normalize_message_from_uses_connection_gateway() -> None:
         intent=IntentType.GetEvent.name,
         client_name="other",
     )
-    client._normalize_message_from(msg)
-    assert msg.client_name == "my-client"
-    assert msg.from_ == "my-client@zeroth.pod-os.com"
+    with pytest.raises(ValueError, match="disagrees with connection identity"):
+        client._normalize_message_from(msg)
 
 
 def test_normalize_message_from_fills_empty_from() -> None:

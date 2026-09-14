@@ -173,6 +173,14 @@ class TimeoutError(PodOSError):
     pass
 
 
+# Appended to response timeouts after a successful GatewayId handshake.
+REPLY_ROUTING_TIMEOUT_HINT = (
+    " If GatewayId succeeded, the gateway may not have routed the reply: "
+    "use a unique ClientName and From = ClientName@<dialed-gateway-FQN>. "
+    "This is not an authentication failure."
+)
+
+
 class AuthenticationError(PodOSError):
     """Authentication failure errors."""
 

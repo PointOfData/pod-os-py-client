@@ -15,23 +15,24 @@ from pod_os_client.message.types import Message
 
 
 def test_config_external_receiver_default_false() -> None:
-    cfg = Config(host="localhost", port=62312)
+    cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
     assert cfg.external_receiver is False
 
 
 def test_config_external_receiver_true() -> None:
-    cfg = Config(host="localhost", port=62312, external_receiver=True)
+    cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", external_receiver=True)
     assert cfg.external_receiver is True
 
 
 def test_config_from_ini_external_receiver(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = config_from_ini({"host": "h", "port": "1", "external_receiver": "true"})
+    cfg = config_from_ini({"host": "h", "port": "1", "agent": "zeroth.pod-os.com", "external_receiver": "true"})
     assert cfg.external_receiver is True
 
 
 def test_config_from_env_external_receiver(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PODOS_GATEWAY_HOST", "localhost")
     monkeypatch.setenv("PODOS_GATEWAY_PORT", "62312")
+    monkeypatch.setenv("PODOS_GATEWAY_FQN", "zeroth.pod-os.com")
     monkeypatch.setenv("PODOS_EXTERNAL_RECEIVER", "1")
     cfg = config_from_env()
     assert cfg.external_receiver is True
@@ -39,12 +40,12 @@ def test_config_from_env_external_receiver(monkeypatch: pytest.MonkeyPatch) -> N
 
 @pytest.mark.asyncio
 async def test_send_message_rejected_when_external_receiver() -> None:
-    client = Client(Config(host="localhost", port=62312, external_receiver=True))
+    client = Client(Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", client_name="b", external_receiver=True))
     client._connected = True
     client._connection = MagicMock()
     msg = Message(
         to="a@gw",
-        from_="b@gw",
+        from_="",
         intent=IntentType.ActorRequest.name,
         client_name="b",
         message_id="m1",
@@ -55,14 +56,14 @@ async def test_send_message_rejected_when_external_receiver() -> None:
 
 @pytest.mark.asyncio
 async def test_start_receiver_rejected_when_external_receiver() -> None:
-    client = Client(Config(host="localhost", port=62312, external_receiver=True))
+    client = Client(Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", external_receiver=True))
     with pytest.raises(RuntimeError, match="external_receiver"):
         client.start_receiver()
 
 
 @pytest.mark.asyncio
 async def test_send_no_wait_encodes_and_sends() -> None:
-    client = Client(Config(host="localhost", port=62312, external_receiver=True))
+    client = Client(Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", client_name="ingest-worker", external_receiver=True))
     client._connected = True
     conn = MagicMock()
     conn.send = AsyncMock()
@@ -70,7 +71,7 @@ async def test_send_no_wait_encodes_and_sends() -> None:
 
     msg = Message(
         to="mention-detector@gw",
-        from_="ingest-worker@gw",
+        from_="",
         intent=IntentType.ActorRequest.name,
         client_name="ingest-worker",
         message_id="req-1",
@@ -82,7 +83,7 @@ async def test_send_no_wait_encodes_and_sends() -> None:
 
 @pytest.mark.asyncio
 async def test_deliver_response_completes_pending() -> None:
-    client = Client(Config(host="localhost", port=62312, external_receiver=True))
+    client = Client(Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", external_receiver=True))
     fut = __import__("asyncio").get_running_loop().create_future()
     client._pending_responses["req-1"] = fut
     resp = Message(
@@ -102,7 +103,7 @@ async def test_deliver_response_completes_pending() -> None:
 async def test_reconnect_once_refuses_external_receiver() -> None:
     from pod_os_client.errors import ConnectionLostError
 
-    client = Client(Config(host="localhost", port=62312, external_receiver=True))
+    client = Client(Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", external_receiver=True))
     client._connected = True
     client._connection = MagicMock()
     with pytest.raises(ConnectionLostError, match="external_receiver"):

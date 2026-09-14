@@ -10,17 +10,17 @@ from pod_os_client.message.types import Message
 
 
 def test_config_default_keepalive_interval() -> None:
-    cfg = Config(host="127.0.0.1", port=62312, client_name="test")
+    cfg = Config(host="127.0.0.1", port=62312, client_name="test", gateway_actor_name="zeroth.pod-os.com")
     assert cfg.get_keepalive_interval() == 30.0
 
 
 def test_config_disabled_keepalive_interval() -> None:
-    cfg = Config(host="127.0.0.1", port=62312, client_name="test", keepalive_interval=0)
+    cfg = Config(host="127.0.0.1", port=62312, client_name="test", gateway_actor_name="zeroth.pod-os.com", keepalive_interval=0)
     assert cfg.get_keepalive_interval() == 0.0
 
 
 def test_config_default_connection_liveness_timeout() -> None:
-    cfg = Config(host="127.0.0.1", port=62312, client_name="test")
+    cfg = Config(host="127.0.0.1", port=62312, client_name="test", gateway_actor_name="zeroth.pod-os.com")
     assert cfg.get_connection_liveness_timeout() == 90.0
 
 
@@ -29,6 +29,7 @@ def test_config_custom_connection_liveness_timeout() -> None:
         host="127.0.0.1",
         port=62312,
         client_name="test",
+        gateway_actor_name="zeroth.pod-os.com",
         connection_liveness_timeout=15.0,
     )
     assert cfg.get_connection_liveness_timeout() == 15.0
@@ -39,6 +40,7 @@ def test_config_disabled_connection_liveness_timeout() -> None:
         host="127.0.0.1",
         port=62312,
         client_name="test",
+        gateway_actor_name="zeroth.pod-os.com",
         connection_liveness_timeout=-1.0,
     )
     assert cfg.get_connection_liveness_timeout() == 0.0

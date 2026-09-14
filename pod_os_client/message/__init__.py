@@ -1,5 +1,6 @@
 """Pod-OS message protocol implementation."""
 
+from pod_os_client.message.batch_status import batch_events_failed, batch_links_failed
 from pod_os_client.message.constants import MAX_MESSAGE_SIZE
 from pod_os_client.message.decoder import decode_message
 from pod_os_client.message.encoder import (
@@ -38,6 +39,8 @@ __all__ = [
     "format_batch_events_payload",
     "format_batch_link_events_payload",
     "format_batch_tags_payload",
+    "batch_links_failed",
+    "batch_events_failed",
     # Validation
     "ValidationError",
     "ValidationErrors",

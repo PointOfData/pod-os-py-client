@@ -71,7 +71,7 @@ class Config:
     host: str
     port: int
     network: str = "tcp"  # 'tcp', 'udp', or 'unix'
-    gateway_actor_name: str = "gateway"
+    gateway_actor_name: str = ""
 
     # Client identity
     client_name: str = ""
@@ -134,6 +134,10 @@ class Config:
         """Validate configuration after initialization."""
         if not self.host:
             raise ValueError("host is required")
+        if not self.gateway_actor_name.strip():
+            raise ValueError(
+                "gateway_actor_name is required (connection gateway FQN, e.g. zeroth.example.com)"
+            )
         if not 0 < self.port < 65536:
             raise ValueError("port must be 1-65535")
         if self.network not in ("tcp", "udp", "unix"):

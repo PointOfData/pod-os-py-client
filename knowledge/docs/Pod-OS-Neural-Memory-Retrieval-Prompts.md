@@ -333,6 +333,8 @@ Clauses are evaluated in the order they appear in the search specification.
 
 #### Example 1: Basic GetEventsForTags Request — Python
 
+**Important:** the search clause goes in `payload.data`, not `neural_memory.search` (`SearchOptions` is not serialized on the wire).
+
 ```python
 from uuid import uuid4
 from pod_os_client.message.intents import IntentType
@@ -340,7 +342,7 @@ from pod_os_client.message.types import (
     Message,
     NeuralMemoryFields,
     GetEventsForTagsOptions,
-    SearchOptions,
+    PayloadFields,
 )
 
 msg = Message(
@@ -349,12 +351,10 @@ msg = Message(
     intent=IntentType.GetEventsForTags.name,
     client_name="MyClient",
     message_id=str(uuid4()),
+    payload=PayloadFields(
+        data="clause_type:S\tboolean:or\tlow:action=click",
+    ),
     neural_memory=NeuralMemoryFields(
-        search=SearchOptions(
-            clause="clause_type:S\tboolean:or\tlow:action=click",
-            buffer_results=True,
-            buffer_format="0",
-        ),
         get_events_for_tags=GetEventsForTagsOptions(
             buffer_results=True,
             include_tag_stats=True,
@@ -376,18 +376,15 @@ msg = Message(
     intent=IntentType.GetEventsForTags.name,
     client_name="MyClient",
     message_id=str(uuid4()),
-    neural_memory=NeuralMemoryFields(
-        search=SearchOptions(
-            clause=(
-                "clause_type:S\tboolean:or\tlow:action=click\n"
-                "clause_type:S\tboolean:and\tlow:user=*"
-            ),
-            buffer_results=True,
-            include_tag_stats=True,
-            hit_tag_filter="^(action|user)=",
-            buffer_format="0",
+    payload=PayloadFields(
+        data=(
+            "clause_type:S\tboolean:or\tlow:action=click\n"
+            "clause_type:S\tboolean:and\tlow:user=*"
         ),
+    ),
+    neural_memory=NeuralMemoryFields(
         get_events_for_tags=GetEventsForTagsOptions(
+            hit_tag_filter="^(action|user)=",
             event_pattern="2024.*",
             include_brief_hits=False,
             get_all_data=False,
@@ -430,7 +427,7 @@ from pod_os_client.message.types import (
     Message,
     NeuralMemoryFields,
     GetEventsForTagsOptions,
-    SearchOptions,
+    PayloadFields,
 )
 
 # Option A — by internal EventId
@@ -456,14 +453,11 @@ msg = Message(
     intent=IntentType.GetEventsForTags.name,
     client_name="MyClient",
     message_id=str(uuid4()),
+    payload=PayloadFields(data=clauses),
     neural_memory=NeuralMemoryFields(
-        search=SearchOptions(
-            clause=clauses,
-            buffer_results=True,
-            buffer_format="0",
-        ),
         get_events_for_tags=GetEventsForTagsOptions(
             buffer_results=True,
+            buffer_format="0",
         ),
     ),
 )
@@ -534,3 +528,21 @@ msg = Message(
 #### Example Response
 
 Tags are returned on the response event or in the response payload. The decoder may populate `response.event.tags` or parse tag data from the payload. Use `response.response.tag_count` and the event's `tags` list (e.g. `TagOutput` with frequency, category, key, value) as provided by the decoder.
+
+## Integration notes
+
+### Pagination (`end_result`)
+
+`start_result` / `end_result` slice results in **storage order**, not relevance order. For ranking, fetch the full candidate set and re-rank client-side.
+
+### `_hits` is not a relevance score
+
+`_hits` includes stored term frequency. Re-rank on distinct matched keys, then IDF-weighted frequency — do not sort on `_hits` alone.
+
+### Concurrency
+
+Keep roughly **8–10 concurrent** requests per actor connection when `enable_concurrent_mode` is true. Higher fan-out can cause silent timeouts.
+
+### Batch write status
+
+After `StoreBatchLinks` / `StoreBatchEvents`, call `batch_links_failed(msg)` / `batch_events_failed(msg)` — envelope `OK` can hide per-record failures.

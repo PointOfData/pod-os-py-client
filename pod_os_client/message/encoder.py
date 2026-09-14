@@ -127,12 +127,12 @@ def format_batch_events_payload(events: list["BatchEventSpec"]) -> str:
             fields.append(f"type={event.type}")
 
         # Append tags to each event line if present.
-        # Format matches Go: tag_{i}={frequency}:{key}={value}
+        # Format matches Go: tag_{i+1}={frequency}:{key}={value} (1-indexed; tag_0 is dropped by the actor)
         if spec.tags:
             for i, tag in enumerate(spec.tags):
                 tag_value = serialize_tag_value(tag.value)
                 tag_str = f"{tag.key}={tag_value}" if tag.key else tag_value
-                fields.append(f"tag_{i}={tag.frequency}:{tag_str}")
+                fields.append(f"tag_{i + 1}={tag.frequency}:{tag_str}")
 
         lines.append("\t".join(fields))
 
@@ -430,11 +430,16 @@ def encode_message(msg: "Message", intent: "Intent", conversation_uuid: str) -> 
             code=EncodeErrorCode.ENCODE_INVALID_ADDRESS,
         )
 
+    # Wire segments are ASCII-only; length prefixes must match post-strip bytes.
+    to_s = _force_ascii(msg.to)
+    from_s = _force_ascii(msg.from_)
+    header_s = _force_ascii(message_header)
+
     # Encode lengths (9 bytes each, hex with 'x' prefix)
     payload_data_length_encoded = f"x{len(data_bytes):08x}"
-    to_length_encoded = f"x{len(msg.to):08x}"
-    from_length_encoded = f"x{len(msg.from_):08x}"
-    header_length_encoded = f"x{len(message_header):08x}"
+    to_length_encoded = f"x{len(to_s):08x}"
+    from_length_encoded = f"x{len(from_s):08x}"
+    header_length_encoded = f"x{len(header_s):08x}"
 
     # Encode message type and data type (9 bytes each, decimal, zero-padded)
     message_type_encoded = f"{intent.message_type:09d}"
@@ -442,11 +447,11 @@ def encode_message(msg: "Message", intent: "Intent", conversation_uuid: str) -> 
 
     # Calculate total length
     total_length = (
-        len(msg.to)
+        len(to_s)
         + 9  # to length field
-        + len(msg.from_)
+        + len(from_s)
         + 9  # from length field
-        + len(message_header)
+        + len(header_s)
         + 9  # header length field
         + len(message_type_encoded)
         + len(data_type_encoded)
@@ -466,16 +471,16 @@ def encode_message(msg: "Message", intent: "Intent", conversation_uuid: str) -> 
 
     # Construct the socket message
     parts = [
-        _force_ascii(total_length_encoded),
-        _force_ascii(to_length_encoded),
-        _force_ascii(from_length_encoded),
-        _force_ascii(header_length_encoded),
-        _force_ascii(message_type_encoded),
-        _force_ascii(data_type_encoded),
-        _force_ascii(payload_data_length_encoded),
-        _force_ascii(msg.to),
-        _force_ascii(msg.from_),
-        _force_ascii(message_header),
+        total_length_encoded,
+        to_length_encoded,
+        from_length_encoded,
+        header_length_encoded,
+        message_type_encoded,
+        data_type_encoded,
+        payload_data_length_encoded,
+        to_s,
+        from_s,
+        header_s,
     ]
 
     # Join all parts and append data bytes

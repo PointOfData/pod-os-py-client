@@ -29,14 +29,14 @@ class TestReconnectConfig:
         assert rc.max_backoff == 60.0
 
     def test_config_builds_reconnect_config_from_flat_fields(self):
-        cfg = Config(host="localhost", port=62312, enable_reconnection=False, max_retries=5)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", enable_reconnection=False, max_retries=5)
         assert cfg.reconnect_config is not None
         assert cfg.reconnect_config.enabled is False
         assert cfg.reconnect_config.max_retries == 5
 
     def test_explicit_reconnect_config_takes_precedence(self):
         rc = ReconnectConfig(enabled=False, max_retries=99)
-        cfg = Config(host="localhost", port=62312, reconnect_config=rc)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com", reconnect_config=rc)
         assert cfg.reconnect_config.max_retries == 99
 
     def test_validation_max_retries(self):
@@ -59,12 +59,12 @@ class TestReconnectConfig:
 class TestStateObserver:
     def test_emit_state_no_handler(self):
         """Emitting state with no handler should not raise."""
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._emit_state(ConnectionState.DISCONNECTED, Exception("test"))
 
     def test_on_connection_state_change(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         transitions: list[tuple[ConnectionState, Exception | None]] = []
 
@@ -83,7 +83,7 @@ class TestStateObserver:
         assert transitions[2] == (ConnectionState.CONNECTED, None)
 
     def test_handler_replacement(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         called1: list[ConnectionState] = []
         called2: list[ConnectionState] = []
@@ -94,7 +94,7 @@ class TestStateObserver:
         assert len(called2) == 1
 
     def test_unregister_handler(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         called: list[ConnectionState] = []
         client.on_connection_state_change(lambda s, e: called.append(s))
@@ -106,7 +106,7 @@ class TestStateObserver:
 class TestWaitForReconnect:
     @pytest.mark.asyncio
     async def test_returns_true_when_already_connected(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._connected = True
         client._connection = object()  # type: ignore[assignment]
@@ -115,7 +115,7 @@ class TestWaitForReconnect:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_not_reconnecting(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._connected = False
         result = await client._wait_for_reconnect(timeout=0.1)
@@ -123,7 +123,7 @@ class TestWaitForReconnect:
 
     @pytest.mark.asyncio
     async def test_returns_false_on_timeout(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._connected = False
         client._reconnecting = True
@@ -133,7 +133,7 @@ class TestWaitForReconnect:
 
     @pytest.mark.asyncio
     async def test_unblocks_when_event_set(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._connected = False
         client._reconnecting = True
@@ -153,20 +153,20 @@ class TestWaitForReconnect:
 
 class TestClosedGuard:
     def test_close_sets_closed(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         assert client._closed is False
 
     @pytest.mark.asyncio
     async def test_close_marks_closed(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         await client.close()
         assert client._closed is True
 
     @pytest.mark.asyncio
     async def test_close_unblocks_waiters(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._connected = False
         client._reconnecting = True
@@ -183,7 +183,7 @@ class TestClosedGuard:
 
     @pytest.mark.asyncio
     async def test_reconnect_aborts_when_closed(self):
-        cfg = Config(host="localhost", port=62312)
+        cfg = Config(host="localhost", port=62312, gateway_actor_name="zeroth.pod-os.com")
         client = Client(cfg)
         client._closed = True
         await client._reconnect(trigger_err=Exception("test"))

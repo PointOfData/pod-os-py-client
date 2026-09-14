@@ -31,8 +31,6 @@ async def main():
         port=62312,
         client_name="MyApp",
         gateway_actor_name="zeroth.example.com",
-        passcode="pass",
-        user_name="user",
     )
     async with Client(config) as client:
         msg = Message(

@@ -13,6 +13,9 @@ from pod_os_client.errors import AuthenticationError
 from pod_os_client.errors import ConnectionError as PodOSConnectionError
 from pod_os_client.errors import ConnectionLostError, ReceiveIdleTimeoutError
 from pod_os_client.errors import DecodeError
+from pod_os_client.errors import EncodeError
+from pod_os_client.errors import EncodeErrorCode
+from pod_os_client.errors import REPLY_ROUTING_TIMEOUT_HINT
 from pod_os_client.errors import TimeoutError as PodOSTimeoutError
 from pod_os_client.message.decoder import decode_message
 from pod_os_client.message.encoder import encode_message
@@ -67,6 +70,36 @@ class Client:
         self._keepalive_task: asyncio.Task[None] | None = None
         self._pool: ConnectionPool | None = None
 
+    async def _send_bytes(self, data: bytes, *, require_connected: bool = True) -> None:
+        """Send raw wire bytes on the primary connection (serialized)."""
+        if not self._connection:
+            raise PodOSConnectionError("client not connected")
+        if require_connected and not self._connected:
+            raise PodOSConnectionError("client not connected")
+        async with self._send_lock:
+            if not self._connection:
+                raise PodOSConnectionError("client not connected")
+            if require_connected and not self._connected:
+                raise PodOSConnectionError("client not connected")
+            await self._connection.send(data)
+
+    def _encode_and_validate(self, msg: Message, intent) -> bytes:
+        """Encode a message and reject malformed wire frames before send."""
+        from pod_os_client.message.validate import (
+            format_validation_errors,
+            validate_raw_message,
+        )
+
+        encoded = encode_message(msg, intent, self._conversation_id)
+        wire_errs = validate_raw_message(encoded)
+        if wire_errs:
+            raise EncodeError(
+                f"wire validation failed:\n{format_validation_errors(wire_errs)}",
+                field="message",
+                code=EncodeErrorCode.ENCODE_HEADER_CONSTRUCTION_FAILED,
+            )
+        return encoded
+
     async def connect(self) -> None:
         """Connect to Pod-OS Gateway with authentication.
 
@@ -104,9 +137,9 @@ class Client:
             message_id=str(uuid4()),
         )
 
-        # Encode and send
-        encoded = encode_message(auth_msg, IntentType.GatewayId, self._conversation_id)
-        await self._connection.send(encoded)
+        # Encode and send (handshake before _connected is set)
+        encoded = self._encode_and_validate(auth_msg, IntentType.GatewayId)
+        await self._send_bytes(encoded, require_connected=False)
 
         # Receive authentication response (small frame; body_timeout caps total wait).
         try:
@@ -140,10 +173,10 @@ class Client:
                 client_name=self.config.client_name,
                 message_id=str(uuid4()),
             )
-            stream_encoded = encode_message(
-                stream_msg, IntentType.GatewayStreamOn, self._conversation_id
+            stream_encoded = self._encode_and_validate(
+                stream_msg, IntentType.GatewayStreamOn
             )
-            await self._connection.send(stream_encoded)
+            await self._send_bytes(stream_encoded, require_connected=False)
 
         self._connected = True
 
@@ -174,9 +207,8 @@ class Client:
             client_name=self.config.client_name,
             message_id=str(uuid4()),
         )
-        encoded = encode_message(msg, IntentType.Keepalive, self._conversation_id)
-        async with self._send_lock:
-            await self._connection.send(encoded)
+        encoded = self._encode_and_validate(msg, IntentType.Keepalive)
+        await self._send_bytes(encoded)
 
     async def send_disconnect(self) -> None:
         """Send an app-level AIP GatewayDisconnect (message_type 6) on the primary connection."""
@@ -190,18 +222,16 @@ class Client:
             client_name=self.config.client_name,
             message_id=str(uuid4()),
         )
-        encoded = encode_message(msg, IntentType.GatewayDisconnect, self._conversation_id)
-        async with self._send_lock:
-            if not self._connection or not self._connection.is_connected():
-                return
-            await self._connection.send(encoded)
+        encoded = self._encode_and_validate(msg, IntentType.GatewayDisconnect)
+        if not self._connection or not self._connection.is_connected():
+            return
+        await self._send_bytes(encoded)
 
     async def send_control_message(self, data: bytes) -> None:
         """Send a pre-encoded control message without waiting for a response."""
         if not self._connection or not self._connected:
             raise PodOSConnectionError("client not connected")
-        async with self._send_lock:
-            await self._connection.send(data)
+        await self._send_bytes(data)
 
     async def send_no_wait(self, msg: Message) -> None:
         """Encode and send a message without calling ``receive()``.
@@ -221,11 +251,8 @@ class Client:
         if not intent:
             raise ValueError(f"unknown intent: {msg.intent}")
 
-        encoded = encode_message(msg, intent, self._conversation_id)
-        async with self._send_lock:
-            if not self._connection or not self._connected:
-                raise PodOSConnectionError("client not connected")
-            await self._connection.send(encoded)
+        encoded = self._encode_and_validate(msg, intent)
+        await self._send_bytes(encoded)
 
     def deliver_response(self, msg: Message) -> bool:
         """Complete a pending future from an external receive loop.
@@ -330,7 +357,7 @@ class Client:
             raise ValueError(f"unknown intent: {msg.intent}")
 
         # Encode
-        encoded = encode_message(msg, intent, self._conversation_id)
+        encoded = self._encode_and_validate(msg, intent)
 
         # If concurrent mode, register future, send, and wait
         if self.config.enable_concurrent_mode:
@@ -342,7 +369,7 @@ class Client:
                 # Send with reconnect-and-retry on a fatal connection error so a
                 # dropped socket does not strand the request.
                 try:
-                    await self._connection.send(encoded)
+                    await self._send_bytes(encoded)
                 except ConnectionLostError as e:
                     rc = self.config.reconnect_config
                     if rc is not None and rc.enabled:
@@ -352,7 +379,7 @@ class Client:
                         )
                         await self._reconnect_once()
                         if self._connected and self._connection:
-                            await self._connection.send(encoded)
+                            await self._send_bytes(encoded)
                         else:
                             raise
                     else:
@@ -365,6 +392,7 @@ class Client:
                     self._pending_responses.pop(msg.message_id, None)
                 raise PodOSTimeoutError(
                     f"receive timeout after {self.config.receive_timeout}s for message {msg.message_id}"
+                    + REPLY_ROUTING_TIMEOUT_HINT
                 ) from None
             except PodOSConnectionError:
                 async with self._lock:
@@ -373,7 +401,7 @@ class Client:
         else:
             # Synchronous mode: send, then receive immediately, with
             # reconnect-and-retry on a fatal connection error.
-            await self._connection.send(encoded)
+            await self._send_bytes(encoded)
             try:
                 response_data = await self._connection.receive(
                     timeout=self.config.get_receive_loop_timeout(),
@@ -387,8 +415,8 @@ class Client:
                     await self._reconnect_once()
                     if self._connected and self._connection:
                         # Re-send after reconnection
-                        encoded = encode_message(msg, intent, self._conversation_id)
-                        await self._connection.send(encoded)
+                        encoded = self._encode_and_validate(msg, intent)
+                        await self._send_bytes(encoded)
                         response_data = await self._connection.receive(
                             timeout=self.config.get_receive_loop_timeout(),
                             body_timeout=self.config.receive_timeout,
@@ -399,6 +427,7 @@ class Client:
                 if isinstance(exc, ReceiveIdleTimeoutError):
                     raise PodOSTimeoutError(
                         f"receive timeout after {self.config.receive_timeout}s"
+                        + REPLY_ROUTING_TIMEOUT_HINT
                     ) from exc
                 raise
 
@@ -742,7 +771,13 @@ class Client:
         expected_from = self.from_address()
         if msg.client_name != self.config.client_name:
             msg.client_name = self.config.client_name
-        if msg.from_ != expected_from:
+        if msg.from_ and msg.from_ != expected_from:
+            raise ValueError(
+                f"message from_ {msg.from_!r} disagrees with connection identity "
+                f"{expected_from!r}; set Config.gateway_actor_name to the dialed gateway FQN "
+                "and leave from_ empty or equal to Client.from_address()"
+            )
+        if not msg.from_:
             msg.from_ = expected_from
 
     def actor_name(self) -> str:

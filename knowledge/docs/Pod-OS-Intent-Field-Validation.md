@@ -187,7 +187,9 @@ Wire format: `_db_cmd=store\t…\t_msg_id=<uuid>` — `_msg_id` is the **last fi
 
 Per-record `BatchEventSpec` requirements: `event.timestamp`, `event.owner` or `event.owner_unique_id`, `event.location`, `event.location_separator`.
 
-Wire format: `_db_cmd=store_batch\t_msg_id=<uuid>\t` — **every field including `_msg_id` carries a trailing tab**. This is the canonical encoding for `StoreBatchEvents` (and differs from all other intents). Use `format_batch_events_payload()` to build the payload.
+Batch payload tags are **1-indexed**: first tag is `tag_1=`, not `tag_0=` (the actor silently drops `tag_0`). Use `format_batch_events_payload()` to build the payload.
+
+Wire format: `_db_cmd=store_batch\t_msg_id=<uuid>\t` — **every field including `_msg_id` carries a trailing tab**. This is the canonical encoding for `StoreBatchEvents` (and differs from all other intents).
 
 ```python
 from pod_os_client.message.encoder import format_batch_events_payload

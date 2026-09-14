@@ -560,6 +560,14 @@ def _validate_get_events_for_tags(msg: "Message") -> ValidationErrors:
             "message/types.py:GetEventsForTagsOptions",
         ))
 
+    if msg.neural_memory.search is not None:
+        errs.append(_errorf(
+            "error", intent, "neural_memory.search", "", "not_serialized",
+            "SearchOptions is not serialized on the wire; put the search clause in payload.data.",
+            'msg.payload = PayloadFields(data="clause_type:S\\tboolean:or\\tlow:key=value")',
+            "message/types.py:SearchOptions",
+        ))
+
     return errs
 
 

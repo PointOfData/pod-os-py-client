@@ -118,8 +118,8 @@ def test_format_batch_events_payload_with_tags():
     result = format_batch_events_payload([spec])
     
     assert "unique_id=uuid1" in result
-    assert "tag_0=1:category=important" in result
-    assert "tag_1=2:status=active" in result
+    assert "tag_1=1:category=important" in result
+    assert "tag_2=2:status=active" in result
 
 
 def test_format_batch_events_payload_multiple():
@@ -232,7 +232,7 @@ def test_format_batch_events_payload_tag_without_key():
     
     result = format_batch_events_payload([spec])
     
-    assert "tag_0=1:simple_value" in result
+    assert "tag_1=1:simple_value" in result
 
 
 def test_format_batch_events_payload_complex_tag_value():

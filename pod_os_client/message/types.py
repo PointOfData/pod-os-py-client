@@ -142,7 +142,11 @@ class GetEventsForTagsOptions:
 
 @dataclass(slots=True)
 class SearchOptions:
-    """Programmable search configuration."""
+    """Programmable search configuration.
+
+    Deprecated: not serialized on the wire. Put the search clause in ``payload.data``
+    for GetEventsForTags.
+    """
 
     clause: str = ""  # Search clause specification
     parameters: str = ""  # Search parameters
