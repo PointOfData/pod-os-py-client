@@ -20,6 +20,7 @@ from pod_os_client.errors import TimeoutError as PodOSTimeoutError
 from pod_os_client.message.decoder import decode_message
 from pod_os_client.message.encoder import encode_message
 from pod_os_client.message.intents import IntentType
+from pod_os_client.message.tag_format import apply_tag_owner_output
 from pod_os_client.message.types import Message
 
 logger = logging.getLogger(__name__)
@@ -386,6 +387,7 @@ class Client:
                         raise
 
                 response = await asyncio.wait_for(future, timeout=self.config.receive_timeout)
+                apply_tag_owner_output(msg, response)
                 return response
             except TimeoutError:
                 async with self._lock:
@@ -407,7 +409,9 @@ class Client:
                     timeout=self.config.get_receive_loop_timeout(),
                     body_timeout=self.config.receive_timeout,
                 )
-                return decode_message(response_data)
+                response = decode_message(response_data)
+                apply_tag_owner_output(msg, response)
+                return response
             except ConnectionLostError as e:
                 rc = self.config.reconnect_config
                 if rc is not None and rc.enabled:
@@ -421,7 +425,9 @@ class Client:
                             timeout=self.config.get_receive_loop_timeout(),
                             body_timeout=self.config.receive_timeout,
                         )
-                        return decode_message(response_data)
+                        response = decode_message(response_data)
+                        apply_tag_owner_output(msg, response)
+                        return response
                 raise
             except (ReceiveIdleTimeoutError, ConnectionLostError) as exc:
                 if isinstance(exc, ReceiveIdleTimeoutError):

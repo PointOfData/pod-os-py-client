@@ -6,6 +6,12 @@ implementing single-pass O(N) algorithms for efficient payload processing.
 
 from typing import Any
 
+from pod_os_client.message.tag_format import (
+    normalize_tag_owner,
+    normalize_tag_owner_lines,
+    parse_event_tag_header,
+    split_tag_key_value,
+)
 from pod_os_client.message.types import (
     BriefHitRecord,
     DateTimeObject,
@@ -268,7 +274,8 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
     The payload contains tab-separated field=value pairs, newline-terminated records.
 
     Line types by prefix:
-      - _event_id=: Event object with inline tags
+      - _event_id=: Event object with inline tags (buffer_format=0)
+      - _event_tag=: One tag of the event named by the field value (buffer_format=1)
       - _link=: Link between events (source field identifies parent event)
       - _linktag=: Tags for a link (first field is link ID)
       - _targettag=: Tags describing link's target event (first field is target ID)
@@ -284,7 +291,7 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
         return [], False
 
     payload_str: str = msg.payload.data
-    lines = payload_str.split("\n")
+    lines = normalize_tag_owner_lines(payload_str).split("\n")
 
     # Check if this is a brief hits response
     is_brief_hits_response = False
@@ -318,6 +325,7 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
 
     link_tags_map: dict[str, list[TagOutput]] = {}
     target_tags_map: dict[str, list[TagOutput]] = {}
+    event_tags_map: dict[str, list[TagOutput]] = {}
 
     # SINGLE PASS: categorize and index all lines
     for line in lines:
@@ -331,6 +339,11 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
             if event_id and event:
                 events_map[event_id] = event
                 event_order.append(event_id)
+
+        elif line.startswith("_event_tag="):
+            event_key, tag = _parse_event_tag_line(line)
+            if event_key and tag:
+                event_tags_map.setdefault(event_key, []).append(tag)
 
         elif line.startswith("_link="):
             link_id, link = _parse_link_line(line)
@@ -363,6 +376,11 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
         event = events_map.get(event_id)
         if not event:
             continue
+
+        if event_id in event_tags_map:
+            event.tags.extend(event_tags_map[event_id])
+            if not event.unique_id:
+                event.unique_id = _unique_id_from_tags(event.tags)
 
         # Get all links for this event via index
         link_ids = links_by_source.get(event_id, [])
@@ -418,32 +436,30 @@ def _parse_event_id_line(line: str, msg: Message) -> tuple[str, EventFields | No
             event.payload_data = PayloadFields()
         event.payload_data.mime_type = record_map["_mimetype"]
 
-    # Parse inline tags (tag:freq:key=value format)
-    for key, value in record_map.items():
-        if key.startswith("tag:"):
-            parts = key.split(":")
-            if len(parts) == 3:
-                try:
-                    freq = int(parts[1])
-                except ValueError:
-                    freq = 1
-                event.tags.append(TagOutput(
-                    frequency=freq,
-                    key=parts[2],
-                    value=value,
-                ))
+    # Parse inline tags (tag:freq:key=value format) in wire order. The fields are read
+    # directly rather than from record_map because tags sharing a key and frequency
+    # (e.g. tag:1:color=red and tag:1:color=blue) would collide in the map.
+    for field in line.split("\t"):
+        name, sep, value = field.partition("=")
+        if not sep or not name.startswith("tag:"):
+            continue
+        parts = name.split(":")
+        if len(parts) == 3:
+            try:
+                freq = int(parts[1])
+            except ValueError:
+                freq = 1
+            event.tags.append(TagOutput(
+                frequency=freq,
+                key=parts[2],
+                value=value,
+            ))
+    if "_event_tag" in record_map:
+        event.tags.append(_parse_event_tag_payload_field(record_map))
 
-        # Handle _event_tag format
-        if key.startswith("_event_tag"):
-            tag = _parse_event_tag_payload_field(record_map)
-            if tag:
-                event.tags.append(tag)
-
-    # Extract unique_id from tags if present
-    for tag in event.tags:
-        if tag.key in ("_unique_id", "unique_id"):
-            event.unique_id = tag.value
-            break
+    unique_id = _unique_id_from_tags(event.tags)
+    if unique_id:
+        event.unique_id = unique_id
 
     return event_id, event
 
@@ -555,8 +571,12 @@ def _parse_target_tag_line(line: str) -> tuple[str, TagOutput | None]:
     return target_id, tag
 
 
-def _parse_event_tag_payload_field(record_map: dict[str, str]) -> TagOutput | None:
-    """Parse tag fields from GetEventsForTags payload record."""
+def _parse_event_tag_payload_field(record_map: dict[str, str]) -> TagOutput:
+    """Parse tag fields from a GetEventsForTags buffer_format=1 record.
+
+    Fields: _event_tag (event key), tag_freq, tag_value (key=value), tag_timestamp, owner
+    (event key or unique ID, present with get_tag_owner / get_tag_owner_unique_id).
+    """
     tag = TagOutput()
 
     if "tag_freq" in record_map:
@@ -566,15 +586,32 @@ def _parse_event_tag_payload_field(record_map: dict[str, str]) -> TagOutput | No
             pass
 
     if "tag_value" in record_map:
-        tag_value = record_map["tag_value"]
-        eq_idx = tag_value.find("=")
-        if eq_idx > 0:
-            tag.key = tag_value[:eq_idx]
-            tag.value = tag_value[eq_idx + 1:]
-        else:
-            tag.value = tag_value
+        tag.key, tag.value = split_tag_key_value(record_map["tag_value"])
+
+    tag.timestamp = record_map.get("tag_timestamp", "")
+    tag.owner = normalize_tag_owner(record_map.get("owner", ""))
 
     return tag
+
+
+def _parse_event_tag_line(line: str) -> tuple[str, TagOutput | None]:
+    """Parse a standalone buffer_format=1 tag line.
+
+    Format: ``_event_tag=<event key>\\ttag_freq=n\\ttag_value=key=value\\ttag_timestamp=s.u[\\towner=...]``
+    """
+    record_map = _parse_tab_delimited_line(line)
+    event_key = record_map.get("_event_tag", "")
+    if not event_key:
+        return "", None
+    return event_key, _parse_event_tag_payload_field(record_map)
+
+
+def _unique_id_from_tags(tags: list[TagOutput]) -> str:
+    """Return the value of the _unique_id (or unique_id) tag, if present."""
+    for tag in tags:
+        if tag.key in ("_unique_id", "unique_id"):
+            return tag.value
+    return ""
 
 
 def parse_get_event_response(
@@ -598,7 +635,7 @@ def parse_get_event_response(
     if not msg.response:
         return [], [], False
 
-    # Parse event_tag headers (format: event_tag:<freq>:<timestamp>=tag_value)
+    # Parse event_tag headers (format: event_tag:<seq>:<freq>[:<timestamp>[:<owner>]]=key=value)
     tags = _parse_event_tag_headers(msg, header_map)
 
     if not msg.payload or not isinstance(msg.payload.data, str):
@@ -666,43 +703,32 @@ def parse_get_event_response(
 def _parse_event_tag_headers(msg: Message, header_map: dict[str, str]) -> list[TagOutput]:
     """Parse event_tag headers from GetEvent response.
 
-    Format: event_tag:<freq>:<timestamp>=tag_value
+    Formats:
+      tag_format=0: ``event_tag:<sequence>:<frequency>=<key>=<value>``
+      tag_format=1: ``event_tag:<sequence>:<frequency>:<ssssssssss.uuuuuu>[:<owner>]=<key>=<value>``
+
+    The first number is the tag's ordinal within the event (``TagOutput.tag_number``),
+    the second is the stored frequency. Reading the ordinal as the frequency made every
+    frequency read back as the tag's position, which silently destroyed any count a
+    caller had stored (a tag written with frequency 42 came back as, say, 19).
+
+    Results are ordered by ascending sequence. GetEvent may return more than one
+    version of the same key, and the sequence is the only ordering signal on the
+    wire, so callers that collapse by key get the newest value last.
 
     Args:
         msg: Message object
         header_map: Header fields dictionary
 
     Returns:
-        List of TagOutput parsed from headers
+        List of TagOutput parsed from headers, ordered by sequence
     """
     results: list[TagOutput] = []
-
     for key, value in header_map.items():
-        if not key.startswith("event_tag:"):
-            continue
-
-        # Parse key format: event_tag:<freq>:<timestamp>
-        parts = key.split(":")
-        if len(parts) < 2:
-            continue
-
-        tag = TagOutput(value=value)
-
-        # Parse frequency (second part after event_tag:)
-        if len(parts) >= 2:
-            try:
-                tag.frequency = int(parts[1])
-            except ValueError:
-                tag.frequency = 1
-
-        # Parse the value to extract key=value if present
-        eq_idx = value.find("=")
-        if eq_idx > 0:
-            tag.key = value[:eq_idx]
-            tag.value = value[eq_idx + 1:]
-
-        results.append(tag)
-
+        tag = parse_event_tag_header(key, value)
+        if tag is not None:
+            results.append(tag)
+    results.sort(key=lambda tag: tag.tag_number)
     return results
 
 
@@ -724,7 +750,19 @@ def _parse_get_event_link_line(line: str, header_map: dict[str, str]) -> LinkFie
 
     if "strength" in record_map:
         try:
-            link.strength_b = float(record_map["strength"])
+            # The wire carries one strength per link line, and it is the strength in
+            # the direction being traversed: querying the source event returns A→B,
+            # querying the target event returns B→A. Measured against a live gateway
+            # with a deliberately asymmetric link (A→B 0.75, B→A 0.25), each side
+            # reported its own direction.
+            #
+            # That makes it strength_a for this record, whose "a" endpoint is the
+            # event that was queried. It used to land in strength_b, which left
+            # strength_a reading 0.0 on every link ever decoded — so a caller
+            # checking forward strength saw "no evidence" for a fully populated
+            # graph, and a caller reading strength_b got the forward number under
+            # the name of the reverse one.
+            link.strength_a = float(record_map["strength"])
         except ValueError:
             pass
 

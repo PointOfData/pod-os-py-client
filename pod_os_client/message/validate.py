@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from pod_os_client.message.constants import MAX_MESSAGE_SIZE
+from pod_os_client.message.types import TagOwnerOutput
 
 if TYPE_CHECKING:
     from pod_os_client.message.types import Message
@@ -536,7 +537,109 @@ def _validate_get_event(msg: "Message") -> ValidationErrors:
             "message/types.py:EventFields", "message/header.py:_get_event_message_header",
         ))
     errs.extend(_validate_lookup_owner_not_used_event(intent, msg.event))
+    if msg.neural_memory is not None:
+        errs.extend(_validate_get_event_tag_format(intent, msg.neural_memory.get_event))
     return errs
+
+
+_TAG_OWNER_OUTPUT_VALUES = frozenset(v.value for v in TagOwnerOutput)
+
+
+def _validate_tag_owner_output_value(intent: str, struct_path: str, wire_field: str,
+                                     value) -> ValidationErrors:
+    """Reject tag_owner_output values other than the TagOwnerOutput members."""
+    raw = value.value if isinstance(value, TagOwnerOutput) else value
+    if isinstance(raw, str) and raw in _TAG_OWNER_OUTPUT_VALUES:
+        return []
+    return [_errorf(
+        "error", intent, struct_path, wire_field, "format",
+        f"{struct_path} {raw!r} is not a valid TagOwnerOutput.",
+        "Use TagOwnerOutput.EVENT_KEY, TagOwnerOutput.UNIQUE_ID, or leave it unset.",
+        "opts.tag_owner_output = TagOwnerOutput.EVENT_KEY",
+        "message/types.py:TagOwnerOutput",
+    )]
+
+
+def _validate_get_event_tag_format(intent: str, opts) -> ValidationErrors:
+    if opts is None:
+        return []
+    errs: ValidationErrors = []
+    tf_field = "neural_memory.get_event.tag_format"
+    owner_field = "neural_memory.get_event.tag_owner_output"
+
+    if opts.tag_format is not None and opts.tag_format not in (0, 1):
+        errs.append(_errorf(
+            "error", intent, tf_field, "tag_format", "format",
+            f"tag_format must be 0 or 1; got {opts.tag_format!r}.",
+            "Set tag_format to 1 for per-tag timestamps and owners, or leave it unset for the default format 0.",
+            "msg.neural_memory.get_event.tag_format = 1",
+            "message/types.py:GetEventOptions.tag_format",
+        ))
+    errs.extend(_validate_tag_owner_output_value(intent, owner_field, "output_tag_owner", opts.tag_owner_output))
+
+    tag_format_1 = opts.tag_format == 1
+    if opts.tag_owner_output != TagOwnerOutput.NONE and not tag_format_1:
+        errs.append(_semantic_error(
+            intent, owner_field, "output_tag_owner",
+            "tag_owner_output only applies to tag_format=1; with tag_format=0 no owners are returned.",
+            "Set tag_format to 1 alongside tag_owner_output.",
+            "msg.neural_memory.get_event.tag_format = 1",
+            "message/types.py:GetEventOptions.tag_owner_output", "message/header.py:_get_event_message_header",
+        ))
+    if tag_format_1 and not opts.get_tags:
+        errs.append(_semantic_warn(
+            intent, tf_field, "tag_format",
+            "tag_format=1 only changes how tags are returned, but get_tags is False so no tags are requested.",
+            "Set get_tags to True.",
+            "msg.neural_memory.get_event.get_tags = True",
+            "message/types.py:GetEventOptions.get_tags",
+        ))
+    return errs
+
+
+def _validate_get_events_for_tags_tag_format(intent: str, opts) -> ValidationErrors:
+    if opts is None:
+        return []
+    errs: ValidationErrors = []
+    bf_field = "neural_memory.get_events_for_tags.buffer_format"
+    owner_field = "neural_memory.get_events_for_tags.tag_owner_output"
+    owner_wire = "get_tag_owner / get_tag_owner_unique_id"
+
+    if opts.buffer_format not in ("", "0", "1"):
+        errs.append(_errorf(
+            "error", intent, bf_field, "buffer_format", "format",
+            f"buffer_format must be \"0\" or \"1\"; got {opts.buffer_format!r}.",
+            "Set buffer_format to \"1\" for one line per tag with timestamps and owners, "
+            "or \"0\" (default) for inline tags.",
+            'msg.neural_memory.get_events_for_tags.buffer_format = "1"',
+            "message/types.py:GetEventsForTagsOptions.buffer_format",
+        ))
+    errs.extend(_validate_tag_owner_output_value(intent, owner_field, owner_wire, opts.tag_owner_output))
+
+    if opts.tag_owner_output != TagOwnerOutput.NONE and opts.buffer_format != "1":
+        errs.append(_semantic_warn(
+            intent, owner_field, owner_wire,
+            "tag_owner_output only applies to buffer_format=1; with buffer_format=0 no owners are returned.",
+            "Set buffer_format to \"1\" alongside tag_owner_output.",
+            'msg.neural_memory.get_events_for_tags.buffer_format = "1"',
+            "message/types.py:GetEventsForTagsOptions.tag_owner_output",
+            "message/header.py:_get_events_for_tag_message_header",
+        ))
+    return errs
+
+
+def _validate_wire_yn(h: dict[str, str], key: str, struct_path: str, code: str,
+                      ref: str) -> ValidationErrors:
+    """Report a header flag whose value is present but not Y or N."""
+    v = h.get(key)
+    if v is None or v in ("Y", "N"):
+        return []
+    return [_errorf(
+        "error", "wire", struct_path, key, "header_value",
+        f"{key} must be Y or N; got {v!r}. A bare flag without =Y is ignored by Pod-OS.",
+        f"Send {key}=Y (set {struct_path}).",
+        code, ref,
+    )]
 
 
 def _validate_get_events_for_tags(msg: "Message") -> ValidationErrors:
@@ -568,6 +671,7 @@ def _validate_get_events_for_tags(msg: "Message") -> ValidationErrors:
             "message/types.py:SearchOptions",
         ))
 
+    errs.extend(_validate_get_events_for_tags_tag_format(intent, msg.neural_memory.get_events_for_tags))
     return errs
 
 
@@ -1558,8 +1662,55 @@ def _validate_neural_memory_request_header(cmd: str, h: dict[str, str],
                 'msg.event.id = "2024.01.15..."',
                 "message/header.py:_get_event_message_header",
             ))
+        tf = h.get("tag_format")
+        if tf is not None and tf not in ("0", "1"):
+            errs.append(_errorf(
+                "error", ctx, "neural_memory.get_event.tag_format", "tag_format", "header_value",
+                f"tag_format must be 0 or 1; got {tf!r}.",
+                "Set neural_memory.get_event.tag_format to 0 or 1.",
+                "msg.neural_memory.get_event.tag_format = 1",
+                "message/types.py:GetEventOptions.tag_format",
+            ))
+        errs.extend(_validate_wire_yn(
+            h, "output_tag_owner", "neural_memory.get_event.tag_owner_output",
+            "msg.neural_memory.get_event.tag_owner_output = TagOwnerOutput.EVENT_KEY",
+            "message/types.py:GetEventOptions.tag_owner_output",
+        ))
+        if _has_header(h, "output_tag_owner") and h.get("tag_format") != "1":
+            errs.append(_semantic_warn(
+                ctx, "neural_memory.get_event.tag_owner_output", "output_tag_owner",
+                "output_tag_owner only applies to tag_format=1.",
+                "Set neural_memory.get_event.tag_format to 1.",
+                "msg.neural_memory.get_event.tag_format = 1",
+                "message/header.py:_get_event_message_header",
+            ))
 
     elif cmd == "events_for_tag":
+        bf = h.get("buffer_format")
+        if bf is not None and bf not in ("0", "1"):
+            errs.append(_errorf(
+                "error", ctx, "neural_memory.get_events_for_tags.buffer_format", "buffer_format", "header_value",
+                f"buffer_format must be 0 or 1; got {bf!r}.",
+                "Set neural_memory.get_events_for_tags.buffer_format to \"0\" or \"1\".",
+                'msg.neural_memory.get_events_for_tags.buffer_format = "1"',
+                "message/types.py:GetEventsForTagsOptions.buffer_format",
+            ))
+        for key in ("get_tag_owner", "get_tag_owner_unique_id"):
+            errs.extend(_validate_wire_yn(
+                h, key, "neural_memory.get_events_for_tags.tag_owner_output",
+                "msg.neural_memory.get_events_for_tags.tag_owner_output = TagOwnerOutput.EVENT_KEY",
+                "message/types.py:GetEventsForTagsOptions.tag_owner_output",
+            ))
+        if ((_has_header(h, "get_tag_owner") or _has_header(h, "get_tag_owner_unique_id"))
+                and h.get("buffer_format") != "1"):
+            errs.append(_semantic_warn(
+                ctx, "neural_memory.get_events_for_tags.tag_owner_output",
+                "get_tag_owner / get_tag_owner_unique_id",
+                "get_tag_owner / get_tag_owner_unique_id only apply to buffer_format=1.",
+                "Set neural_memory.get_events_for_tags.buffer_format to \"1\".",
+                'msg.neural_memory.get_events_for_tags.buffer_format = "1"',
+                "message/header.py:_get_events_for_tag_message_header",
+            ))
         if not _has_header(h, "buffer_results"):
             errs.append(_errorf(
                 "warn", ctx, "neural_memory.get_events_for_tags.buffer_results", "buffer_results", "header_missing",

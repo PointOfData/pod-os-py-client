@@ -1,10 +1,13 @@
 """Pod-OS message types and structures."""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from typing import Any, Optional
 
 __all__ = [
     "DateTimeObject",
+    "TagOwnerOutput",
     "Envelope",
     "EventFields",
     "PayloadFields",
@@ -87,13 +90,26 @@ class PayloadFields:
     data_size: int = 0  # Data size in bytes
 
 
+class TagOwnerOutput(str, Enum):
+    """Whether, and how, the owner of each returned tag is reported.
+
+    Applies to GetEvent (tag_format=1) and GetEventsForTags (buffer_format="1") responses.
+    """
+
+    NONE = ""  # Do not report tag owners (default)
+    EVENT_KEY = "event_key"  # Report the full event key of the event that created each tag (TagOutput.owner)
+    UNIQUE_ID = "unique_id"  # Report the unique ID of the event that created each tag (TagOutput.owner_unique_id)
+
+
 @dataclass(slots=True)
 class GetEventOptions:
     """Options for the GetEvent intent."""
 
     send_data: bool = False  # Return payload data with MIME type
     local_id_only: bool = False  # Return only local ID
-    tag_format: int | None = None  # Tag output format (0 or 1)
+    # Tag output format: 0 (default) = event_tag:n:f, 1 = event_tag:n:f:ssssssssss.uuuuuu[:owner]
+    # (adds storage timestamp and owner)
+    tag_format: int | None = None
     request_format: int = 0  # Output format
     first_link: int = 0  # First link index to retrieve
     link_count: int = 0  # Number of links to return
@@ -106,6 +122,9 @@ class GetEventOptions:
     target_facet_filter: str = ""  # Filter target tags by prefix
     category_filter: str = ""  # Filter by link category
     tag_filter: str = ""  # Regex filter for tags
+    # Report each tag's owner (requires tag_format=1): EVENT_KEY sends output_tag_owner=Y,
+    # UNIQUE_ID sends output_tag_owner=N
+    tag_owner_output: TagOwnerOutput = TagOwnerOutput.NONE
 
 
 @dataclass(slots=True)
@@ -137,7 +156,12 @@ class GetEventsForTagsOptions:
     include_tag_stats: bool = False  # Include tag statistics
     invert_hit_tag_filter: bool = False  # Invert the hit tag filter
     hit_tag_filter: str = ""  # Filter for result tags
-    buffer_format: str = ""  # Output format
+    # Output format: "0" = tags inline on the _event_id line (tag:freq:key=value), "1" = one
+    # _event_tag line per tag with tag_freq, tag_value, tag_timestamp and optional owner
+    buffer_format: str = ""
+    # Report each tag's owner (requires buffer_format="1"): EVENT_KEY sends get_tag_owner=Y,
+    # UNIQUE_ID sends get_tag_owner_unique_id=Y
+    tag_owner_output: TagOwnerOutput = TagOwnerOutput.NONE
 
 
 @dataclass(slots=True)
@@ -393,9 +417,46 @@ class TagOutput:
     category: str = ""
     key: str = ""
     value: str = ""
-    owner: str = ""
+    owner: str = ""  # Event key of the event that created the tag (TagOwnerOutput.EVENT_KEY); empty when unowned
+    # Unique ID of the event that created the tag (TagOwnerOutput.UNIQUE_ID); empty when unowned
+    # or the owner has no unique ID
+    owner_unique_id: str = ""
+    # Tag storage time as POSIX "ssssssssss.uuuuuu" UTC (GetEvent tag_format=1,
+    # GetEventsForTags buffer_format="1")
     timestamp: str = ""
+    tag_number: int = 0  # Database tag counter (GetEvent event_tag:nnnnnnnnn); 0 when not reported
     target_tag_id: str = ""  # ID of the target tag
+
+    def time(self) -> datetime | None:
+        """Return timestamp as a UTC datetime, or None when empty or malformed."""
+        return parse_posix_timestamp(self.timestamp)
+
+
+def parse_posix_timestamp(s: str) -> datetime | None:
+    """Parse a Pod-OS ``[+|-]ssssssssss.uuuuuu`` timestamp into a UTC datetime."""
+    if not s:
+        return None
+    neg = False
+    if s[0] == "+":
+        s = s[1:]
+    elif s[0] == "-":
+        neg = True
+        s = s[1:]
+    sec_str, _, frac_str = s.partition(".")
+    if not _is_ascii_digits(sec_str) or (frac_str and not _is_ascii_digits(frac_str)):
+        return None
+    sec = int(sec_str)
+    usec = int(frac_str[:6].ljust(6, "0")) if frac_str else 0
+    if neg:
+        sec, usec = -sec, -usec
+    try:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=sec, microseconds=usec)
+    except OverflowError:
+        return None
+
+
+def _is_ascii_digits(s: str) -> bool:
+    return s.isascii() and s.isdigit()
 
 
 @dataclass(slots=True)

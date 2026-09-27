@@ -12,7 +12,8 @@ from pod_os_client.message.encoder import (
 )
 from pod_os_client.message.header import construct_header
 from pod_os_client.message.intents import Intent
-from pod_os_client.message.types import Envelope, EventFields, Message
+from pod_os_client.message.tag_format import apply_tag_owner_output
+from pod_os_client.message.types import Envelope, EventFields, Message, TagOwnerOutput
 from pod_os_client.message.utils import get_timestamp, get_timestamp_from_datetime
 from pod_os_client.message.validate import (
     ValidationError,
@@ -41,6 +42,9 @@ __all__ = [
     "format_batch_tags_payload",
     "batch_links_failed",
     "batch_events_failed",
+    # Tag metadata
+    "TagOwnerOutput",
+    "apply_tag_owner_output",
     # Validation
     "ValidationError",
     "ValidationErrors",

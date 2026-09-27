@@ -319,6 +319,87 @@ status = response.processing_status()
 payload_bytes = response.payload_data()
 ```
 
+### Tag Metadata: Storage Timestamps and Owners (tag_format=1 / buffer_format=1)
+
+By default, tags come back as frequency plus `key=value`. Both retrieval intents can also report, for each tag, **when it was stored** and **which event created it** (its owner). Both formats are opt-in.
+
+| Intent | Request option | Wire | Per-tag data added |
+|---|---|---|---|
+| GetEvent | `GetEventOptions.tag_format = 1` (with `get_tags=True`) | `tag_format=1` | `TagOutput.tag_number`, `TagOutput.timestamp`, owner when the server emits it |
+| GetEvent | `GetEventOptions.tag_owner_output = TagOwnerOutput.EVENT_KEY` / `UNIQUE_ID` | `output_tag_owner=Y` / `N` | owner as event key / unique ID |
+| GetEventsForTags | `GetEventsForTagsOptions.buffer_format = "1"` | `buffer_format=1` | `TagOutput.timestamp` (one `_event_tag` line per tag) |
+| GetEventsForTags | `GetEventsForTagsOptions.tag_owner_output = TagOwnerOutput.EVENT_KEY` / `UNIQUE_ID` | `get_tag_owner=Y` / `get_tag_owner_unique_id=Y` | owner as event key / unique ID |
+
+#### Rules:
+- Request tag metadata only when the task needs it: auditing or provenance ("who asserted this tag?"), recency ("which tags were added after T?"), or reconciling duplicate tags. It makes responses larger (roughly 3x for `buffer_format="1"`).
+- `tag_owner_output` needs the matching format: `tag_format=1` for GetEvent (validation error otherwise) and `buffer_format="1"` for GetEventsForTags (validation warning otherwise).
+- `TagOwnerOutput.EVENT_KEY` fills `TagOutput.owner` with the owning event's key. `TagOwnerOutput.UNIQUE_ID` fills `TagOutput.owner_unique_id` with the owning event's unique ID. The response doesn't say which form it carries, so `Client.send_message` remaps using the request. If you decode raw bytes with `decode_message`, call `apply_tag_owner_output(request, response)`.
+- A tag with no owning event (for example one created under `$sys`) has an empty owner. Pod-OS sends `NULL` or the all-zero key `+0000000000.000000...` for these, and the SDK normalizes both to `""`. An owner that has no unique ID is also empty under `TagOwnerOutput.UNIQUE_ID`.
+- `TagOutput.timestamp` is the POSIX UTC time the tag was stored, `"ssssssssss.uuuuuu"`, not the event's timestamp. Use `tag.time()` to get a timezone-aware UTC `datetime` (or `None`).
+- GetEvent tags are ordered by `tag_number`, the database tag counter.
+- Current Pod-OS builds leave the owner out of GetEvent `tag_format=1` output even when `output_tag_owner` is sent (verified live). Use GetEventsForTags with `buffer_format="1"` when you need owners.
+
+#### Example: GetEvent with tag timestamps — Python
+
+```python
+from pod_os_client.message import TagOwnerOutput
+
+msg = Message(
+    to="mem@zeroth.example.com",
+    from_="MyClient@zeroth.example.com",
+    intent=IntentType.GetEvent.name,
+    client_name="MyClient",
+    message_id=str(uuid4()),
+    event=EventFields(unique_id="order-1234"),
+    neural_memory=NeuralMemoryFields(
+        get_event=GetEventOptions(
+            get_tags=True,
+            tag_format=1,
+            tag_owner_output=TagOwnerOutput.EVENT_KEY,
+        ),
+    ),
+)
+response = await client.send_message(msg)
+# response.event.tags[i]: TagOutput(tag_number=17, frequency=1, key="status", value="shipped",
+#                                   timestamp="1790266973.722260", owner="")
+```
+
+#### Example: GetEventsForTags with tag owners by unique ID — Python
+
+```python
+from pod_os_client.message import TagOwnerOutput
+
+msg = Message(
+    to="mem@zeroth.example.com",
+    from_="MyClient@zeroth.example.com",
+    intent=IntentType.GetEventsForTags.name,
+    client_name="MyClient",
+    message_id=str(uuid4()),
+    payload=PayloadFields(data="clause_type:S\tboolean:or\tlow:status=shipped"),
+    neural_memory=NeuralMemoryFields(
+        get_events_for_tags=GetEventsForTagsOptions(
+            buffer_results=True,
+            get_all_data=True,
+            buffer_format="1",
+            tag_owner_output=TagOwnerOutput.UNIQUE_ID,
+        ),
+    ),
+)
+response = await client.send_message(msg)
+for event in response.response.event_records:
+    for tag in event.tags:
+        # tag.timestamp == "1790266974.325930", tag.owner_unique_id == "warehouse-7" ("" when unowned)
+        stored_at = tag.time()
+```
+
+Wire format for `buffer_format=1` (one line per tag after each `_event_id` line):
+
+```
+_event_tag=<event key>	tag_freq=5	tag_value=size=large	tag_timestamp=1790266974.325930	owner=<event key or unique ID>
+```
+
+The SDK also handles a server quirk where the `owner` field is written after the line's newline. Always use the decoder rather than parsing these lines by hand.
+
 ### Get Events using Tag search (Events Matching Tags)
 
 Used to retrieve Events [GetEventsForTags Intent type] that match the Tag search parameters.

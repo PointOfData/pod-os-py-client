@@ -275,6 +275,31 @@ data_msg = Message(
 response = await client.send_message(data_msg)
 ```
 
+### Tag Metadata (timestamps and owners)
+
+GetEvent and GetEventsForTags can return each tag's storage time and owning event. Both are opt-in:
+
+```python
+from pod_os_client.message import TagOwnerOutput
+from pod_os_client.message.types import GetEventOptions, GetEventsForTagsOptions, NeuralMemoryFields
+
+# GetEvent: tag_format=1 adds tag_number and timestamp to every tag
+msg.neural_memory = NeuralMemoryFields(get_event=GetEventOptions(get_tags=True, tag_format=1))
+
+# GetEventsForTags: buffer_format="1" adds timestamp; tag_owner_output adds the owner
+msg.neural_memory = NeuralMemoryFields(get_events_for_tags=GetEventsForTagsOptions(
+    buffer_results=True,
+    buffer_format="1",
+    tag_owner_output=TagOwnerOutput.UNIQUE_ID,  # or TagOwnerOutput.EVENT_KEY
+))
+
+response = await client.send_message(msg)
+for tag in response.response.event_records[0].tags:
+    print(tag.key, tag.value, tag.time(), tag.owner_unique_id)  # tag.owner with EVENT_KEY
+```
+
+`Client.send_message` routes the owner into `owner` (event key) or `owner_unique_id` according to the request. When decoding raw bytes yourself, call `apply_tag_owner_output(request, response)` from `pod_os_client.message`. See "Tag Metadata" in `knowledge/docs/Pod-OS-Neural-Memory-Retrieval-Prompts.md` for the rules.
+
 ## Performance Optimization
 
 For maximum performance:

@@ -155,6 +155,80 @@ def test_decode_store_batch_events_response_ignores_total_event_hits() -> None:
     assert len(decoded.response.store_batch_event_record.event_results) == 3
 
 
+def test_decode_get_event_response_parses_tags_without_payload_body() -> None:
+    """
+    A tags-only GetEvent reply has no payload body, and its tags must survive.
+
+    This is the exact shape a live ENM returns for an event that has tags but no
+    links: ``data_size=-1``, no payload, and every tag carried as an
+    ``event_tag:<seq>:<freq>=<key>=<value>`` header field. Tag parsing used to be
+    gated on a non-empty payload, so all of them were dropped and callers saw an
+    event with zero tags — which silently defeated entity hydration entirely.
+    """
+    header = (
+        "_status=OK\t_msg=OK\t_count=1\t_type=get\t"
+        "event_id=+1789664588.613549\tunique_id=eo_cfc917cd44f9\t"
+        "data_size=-1\t_user=$DEFAULT\t"
+        "event_tag:000000001:1=event_type=entity\t"
+        "event_tag:000000002:1=canonical_name=Overmatch\t"
+        "event_tag:000000003:4=name_norm=overmatch"
+    )
+    raw = _build_raw_message(header=header, payload=b"")
+
+    decoded = decode_message(raw)
+
+    assert decoded.intent == "GetEventResponse"
+    assert decoded.event is not None
+    tags = {t.key: t.value for t in decoded.event.tags}
+    assert tags["canonical_name"] == "Overmatch"
+    assert tags["name_norm"] == "overmatch"
+    assert tags["event_type"] == "entity"
+    # The record view callers hydrate from must be populated too.
+    assert decoded.response is not None
+    assert len(decoded.response.event_records) == 1
+    assert len(decoded.response.event_records[0].tags) == 3
+
+
+def test_decode_get_event_tag_frequency_is_not_the_sequence() -> None:
+    """
+    ``event_tag:<sequence>:<frequency>`` — the second number is the frequency.
+
+    Measured against a live ENM: three tags stored with frequencies 7, 3 and 42
+    came back on the wire as sequences 17, 18, 19 carrying exactly those
+    frequencies. Reading the sequence instead returned 17/18/19 as the
+    "frequency", destroying any count a caller had stored.
+    """
+    header = (
+        "_status=OK\t_msg=OK\t_count=1\t_type=get\tunique_id=fqu_1\tdata_size=-1\t"
+        "event_tag:000000017:7=fa=alpha\t"
+        "event_tag:000000018:3=fb=beta\t"
+        "event_tag:000000019:42=fc=gamma"
+    )
+    decoded = decode_message(_build_raw_message(header=header, payload=b""))
+
+    assert decoded.event is not None
+    by_key = {t.key: t.frequency for t in decoded.event.tags}
+    assert by_key == {"fa": 7, "fb": 3, "fc": 42}
+
+
+def test_decode_get_event_tags_are_ordered_by_sequence() -> None:
+    """Tags arrive ordered by sequence, so collapsing by key keeps the newest."""
+    header = (
+        "_status=OK\t_type=get\tunique_id=vvu_1\tdata_size=-1\t"
+        "event_tag:000000019:1=state=third\t"
+        "event_tag:000000017:1=state=first\t"
+        "event_tag:000000018:1=state=second"
+    )
+    decoded = decode_message(_build_raw_message(header=header, payload=b""))
+
+    assert decoded.event is not None
+    values = [t.value for t in decoded.event.tags]
+    assert values == ["first", "second", "third"]
+    # The convention callers rely on: last wins when collapsing by key.
+    collapsed = {t.key: t.value for t in decoded.event.tags}
+    assert collapsed["state"] == "third"
+
+
 def test_decode_store_batch_links_response_uses_links_ok() -> None:
     header = (
         "_type=link_batch\t_status=OK\t_total_link_requests_found=2\t"

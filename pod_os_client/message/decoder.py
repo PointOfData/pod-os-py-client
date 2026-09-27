@@ -457,21 +457,25 @@ def decode_message(data: bytes) -> Message:
 
         msg.response = response
 
-        # Parse payload for specific intents
-        if intent and payload_data:
-            intent_name = intent.name
+        intent_name = intent.name if intent else ""
 
-            # Handle both Request and Response intent names
-            if intent_name in ("GetEvent", "GetEventResponse"):
-                # Parse tags and links from GetEvent response
-                if payload_fields.mime_type != "application/octet-stream":
-                    tags, links, ok = parse_get_event_response(msg, header_map)
-                    if ok and msg.event:
-                        msg.response.event_records = [msg.event]
-                        msg.response.event_records[0].tags = tags
-                        msg.response.event_records[0].links = links
+        # GetEvent carries its tags as ``event_tag:<seq>:<freq>=<key>=<value>``
+        # header fields, and a response with tags but no links has no payload
+        # body at all (``data_size=-1``). Gating this on payload_data therefore
+        # dropped every tag of a tags-only response, which silently defeated all
+        # entity hydration. parse_get_event_response reads the headers first and
+        # copes with an absent body on its own.
+        if intent_name in ("GetEvent", "GetEventResponse"):
+            if payload_fields.mime_type != "application/octet-stream":
+                tags, links, ok = parse_get_event_response(msg, header_map)
+                if ok and msg.event:
+                    msg.response.event_records = [msg.event]
+                    msg.response.event_records[0].tags = tags
+                    msg.response.event_records[0].links = links
 
-            elif intent_name in ("GetEventsForTags", "GetEventsForTagsResponse"):
+        # The remaining intents genuinely carry their records in the payload.
+        elif intent and payload_data:
+            if intent_name in ("GetEventsForTags", "GetEventsForTagsResponse"):
                 event_records, ok = parse_get_events_for_tags_payload(msg)
                 if ok:
                     msg.response.event_records = event_records

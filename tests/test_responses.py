@@ -120,6 +120,71 @@ def test_parse_get_event_response():
     assert links[0].event_b == "evt2"
 
 
+def test_link_strength_is_the_traversed_direction():
+    """
+    ``strength=`` describes the direction being traversed, so it is strength_a.
+
+    A live gateway was given a link with A→B 0.75 and B→A 0.25. Querying the source
+    event returned 0.75; querying the target returned 0.25. Each side reports its own
+    outbound strength, and for a decoded record the queried event is the "a" endpoint.
+
+    This landed in ``strength_b`` for a long time, which made ``strength_a`` read 0.0
+    on every link the client ever decoded. Nothing raised — callers just saw a graph
+    with no forward evidence anywhere.
+    """
+    msg = Message()
+    msg.payload = PayloadFields(
+        data="_link=link1\ttarget_event=evt2\ttarget_unique_id=eo_b\tstrength=0.75\tcategory=supplies_to"
+    )
+    msg.response = ResponseFields()
+
+    _, links, ok = parse_get_event_response(msg, {"event_id": "evt1"})
+
+    assert ok
+    assert len(links) == 1
+    link = links[0]
+    assert link.strength_a == 0.75, "traversed direction belongs in strength_a"
+    assert link.strength_b == 0.0, (
+        "no reverse strength is present on this line, so strength_b stays at its "
+        "default rather than borrowing the forward number"
+    )
+
+
+def test_a_link_line_without_a_strength_leaves_both_directions_at_zero():
+    """A missing strength is absence, not an implied value in either direction."""
+    msg = Message()
+    msg.payload = PayloadFields(data="_link=link1\ttarget_event=evt2\tcategory=describes")
+    msg.response = ResponseFields()
+
+    _, links, ok = parse_get_event_response(msg, {"event_id": "evt1"})
+
+    assert ok
+    assert links[0].strength_a == 0.0
+    assert links[0].strength_b == 0.0
+
+
+def test_an_unparseable_strength_does_not_discard_the_link():
+    """
+    A malformed strength costs the weight, not the edge.
+
+    Topology is the more valuable half of a link record: knowing A connects to B with
+    an unknown weight is far better than silently dropping the adjacency.
+    """
+    msg = Message()
+    msg.payload = PayloadFields(
+        data="_link=link1\ttarget_event=evt2\tstrength=not-a-number\tcategory=describes"
+    )
+    msg.response = ResponseFields()
+
+    _, links, ok = parse_get_event_response(msg, {"event_id": "evt1"})
+
+    assert ok
+    assert len(links) == 1
+    assert links[0].event_b == "evt2"
+    assert links[0].category == "describes"
+    assert links[0].strength_a == 0.0
+
+
 def test_parse_store_batch_events_payload():
     """Test parsing StoreBatchEvents response."""
     msg = Message()

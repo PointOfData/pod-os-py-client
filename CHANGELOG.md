@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Extended tag formats with per-tag storage timestamps and owners: GetEvent `tag_format=1`
+  and GetEventsForTags `buffer_format="1"` (one `_event_tag` line per tag).
+- `TagOwnerOutput` (`NONE`, `EVENT_KEY`, `UNIQUE_ID`) on `GetEventOptions.tag_owner_output`
+  (`output_tag_owner=Y`/`N`) and `GetEventsForTagsOptions.tag_owner_output`
+  (`get_tag_owner=Y` / `get_tag_owner_unique_id=Y`).
+- `TagOutput.tag_number`, `TagOutput.owner_unique_id`, and `TagOutput.time()` (UTC `datetime`
+  from `TagOutput.timestamp`).
+- `apply_tag_owner_output(request, response)` moves owners into `owner_unique_id` when the
+  request asked for unique IDs; `Client.send_message` applies it automatically.
+- Validation for `tag_format`, `buffer_format`, `tag_owner_output`, and the matching wire flags.
+
+### Fixed
+- GetEventsForTags `buffer_format=1` responses requested with an owner flag: Pod-OS writes
+  `\towner=` after the tag line's newline, gluing it onto the next record. The decoder rejoins
+  each owner to its tag line and restores the record break.
+- Tag owners `NULL` and the all-zero event key (unowned / `$sys` tags) decode as empty.
+- GetEvent tag frequency is read from the third `event_tag:<seq>:<freq>` component instead of the
+  tag sequence number, and tags are returned ordered by sequence.
+- GetEventsForTags `buffer_format=0` keeps every inline tag, including repeated tags with the same
+  key and frequency.
+
 ## [0.1.2] - 2026-08-18
 
 ### Added

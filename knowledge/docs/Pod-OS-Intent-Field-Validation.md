@@ -239,7 +239,8 @@ payload = format_batch_events_payload([
 | `neural_memory.get_event.target_facet_filter` | `target_facet_filter` | optional |
 | `neural_memory.get_event.category_filter` | `category_filter` | optional |
 | `neural_memory.get_event.tag_filter` | `tag_filter` | optional |
-| `neural_memory.get_event.tag_format` | `tag_format` | always written; defaults to `0` if `None` |
+| `neural_memory.get_event.tag_format` | `tag_format` | always written; defaults to `0` if `None`; supported values `0`, `1` (else `format` error); `1` with `get_tags=False` → `semantic` warn |
+| `neural_memory.get_event.tag_owner_output` | `output_tag_owner` | optional; `TagOwnerOutput.EVENT_KEY` → `output_tag_owner=Y`, `TagOwnerOutput.UNIQUE_ID` → `output_tag_owner=N`, `NONE` omitted; requires `tag_format=1` (else `semantic` error); value outside `TagOwnerOutput` → `format` error |
 | `neural_memory.get_event.request_format` | `request_format` | always written; defaults to `0` |
 | `neural_memory.get_event.first_link` | `first_link` | optional; written when `> 0` |
 | `neural_memory.get_event.link_count` | `link_count` | optional; written when `> 0` |
@@ -254,7 +255,8 @@ payload = format_batch_events_payload([
 | `neural_memory` | — | required; nil_struct if None |
 | `neural_memory.get_events_for_tags` | — | required; nil_struct if None |
 | `neural_memory.get_events_for_tags.buffer_results` | `buffer_results` | always written as `Y` or `N` |
-| `neural_memory.get_events_for_tags.buffer_format` | `buffer_format` | always written; defaults to `"0"` |
+| `neural_memory.get_events_for_tags.buffer_format` | `buffer_format` | always written; defaults to `"0"`; supported values `""`, `"0"`, `"1"` (else `format` error) |
+| `neural_memory.get_events_for_tags.tag_owner_output` | `get_tag_owner` / `get_tag_owner_unique_id` | optional; `TagOwnerOutput.EVENT_KEY` → `get_tag_owner=Y`, `TagOwnerOutput.UNIQUE_ID` → `get_tag_owner_unique_id=Y`, `NONE` omitted; only applies to `buffer_format="1"` (else `semantic` warn). The bare flag `get_tag_owner_unique_id` without `=Y` is ignored by Pod-OS (verified live) |
 | `neural_memory.get_events_for_tags.event_pattern` | `event` | optional |
 | `neural_memory.get_events_for_tags.event_pattern_high` | `event_high` | optional |
 | `neural_memory.get_events_for_tags.link_tag_filter` | `link_tag_pattern` | optional (**wire field is `link_tag_pattern`, not `link_tag_filter`**) |
@@ -268,6 +270,38 @@ payload = format_batch_events_payload([
 | `message_id` | `_msg_id` | optional; last field, no trailing tab |
 
 Note: `msg.event` is **not** required and **not** dereferenced by `_get_events_for_tag_message_header`.
+
+---
+
+#### Tag formats (GetEventResponse tag_format / GetEventsForTagsResponse buffer_format)
+
+**GetEventResponse.** Tags are response HEADER fields (one per tag), not payload lines, and a tags-only response may have no payload body at all.
+
+- `tag_format=0`: `event_tag:nnnnnnnnn:fffffffff=key=value` — `nnnnnnnnn` = tag number → `TagOutput.tag_number`; `fffffffff` = frequency → `TagOutput.frequency` (defaults to `1` if unparseable)
+- `tag_format=1`: `event_tag:nnnnnnnnn:fffffffff:ssssssssss.uuuuuu[:owner_id]=key=value`
+  - `ssssssssss.uuuuuu` = POSIX UTC time the tag was stored → `TagOutput.timestamp` (parse with `TagOutput.time()`)
+  - `owner_id` (the name is split at most 3 times after `event_tag:` so owner IDs containing `:` stay intact) → `TagOutput.owner`; with `output_tag_owner=N` it is the owner's unique ID and `Client.send_message` / `apply_tag_owner_output()` moves it to `TagOutput.owner_unique_id`; `NULL` or the all-zero event key `+0000000000.000000...` (no owning event) → `""`
+  - Verified live (kind, 2026-09-24): the deployed build omits the `:owner_id` segment even when `output_tag_owner=Y`/`N` is sent, so tags decode with an empty owner. The decoder accepts the documented 5-part form when a build emits it.
+- The value is split at the first `=` (only when it is not the first character) into `key` / `value`; otherwise the whole text is the value.
+- Tags are ordered by tag number and also populate `response.event_records[0].tags`.
+- Fixtures: `tests/fixtures/tag_format/get_event_tag_format_{0,1}.bin`, `get_event_tag_format_1_output_tag_owner_y.bin`
+
+**GetEventsForTagsResponse, `buffer_format="0"`.** `_event_id` lines carry tags inline as `tag:freq:key=value`. They are read in wire order so tags sharing a key and frequency are all kept.
+
+**GetEventsForTagsResponse, `buffer_format="1"`.** `_event_id`, `_link`, `_linktag`, `_targettag` lines as in format 0, except `_event_id` lines carry no inline `tag:` fields. Each tag is a separate line following its `_event_id` line:
+
+```
+_event_tag=<event key>\ttag_freq=nnnnnnnnn\ttag_value=key=value\ttag_timestamp=ssssssssss.uuuuuu[\towner=<event key or unique ID>]
+```
+
+- `_event_tag` = key of the event the tag belongs to; the tag is appended to that event's `tags`
+- `tag_freq` → `frequency`; `tag_value` → `key`=`value`; `tag_timestamp` → `timestamp`
+- `owner` → `owner` (`get_tag_owner=Y`: event key) or, after `apply_tag_owner_output()`, `owner_unique_id` (`get_tag_owner_unique_id=Y`: unique ID); `NULL` or the all-zero event key → `""`
+- `event.unique_id` is taken from the `_unique_id` (or `unique_id`) tag when not already set
+- **WIRE QUIRK** (verified live, kind 2026-09-24): with an owner flag, Pod-OS writes `\towner=X` AFTER the tag line's newline, so it runs into the next record with no separator:
+  `_event_tag=K\t...\ttag_timestamp=T1\n\towner=O1_event_tag=K\t...\ttag_timestamp=T2\n\towner=O2\n`
+  Each owner belongs to the tag line BEFORE it. The decoder (`normalize_tag_owner_lines` in `pod_os_client/message/tag_format.py`) rejoins `\n\towner=` to the previous line and splits `O_event_tag=` into `O` + a new `_event_tag=` record. Payloads in the documented form are left unchanged.
+- Fixtures: `tests/fixtures/tag_format/events_for_tag_buffer_format_{0,1}.bin`, `events_for_tag_buffer_format_1_get_tag_owner.bin`, `events_for_tag_buffer_format_1_get_tag_owner_unique_id.bin`
 
 ---
 
@@ -450,8 +484,8 @@ Per `_db_cmd` header checks (messageType 1000):
 | `store` | `timestamp` (WARN if absent) |
 | `store_batch` | payload length `> 0` |
 | `tag_store_batch` | `event_id` or `unique_id`; `owner` or `owner_unique_id` |
-| `get` | `event_id` or `unique_id` |
-| `events_for_tag` | `buffer_results` (WARN if absent) |
+| `get` | `event_id` or `unique_id`; `tag_format` if present is `0` or `1`; `output_tag_owner` if present is `Y` or `N` (`header_value` error otherwise), WARN when `tag_format` != `1` |
+| `events_for_tag` | `buffer_results` (WARN if absent); `buffer_format` if present is `0` or `1`; `get_tag_owner` / `get_tag_owner_unique_id` if present are `Y` or `N` (`header_value` error otherwise), WARN when `buffer_format` != `1` |
 | `link` | `strength_a`, `strength_b`, `category`, `timestamp`, `owner_event_id` or `owner_unique_id`, event ID pair |
 | `unlink` | `event_id` or `unique_id` |
 | `link_batch` | payload length `> 0` |
@@ -599,6 +633,8 @@ flowchart TD
 | `pod_os_client/message/encoder.py` | `encode_message()`, `format_batch_events_payload()`, `format_batch_link_events_payload()` |
 | `pod_os_client/message/types.py` | `Message`, `EventFields`, `LinkFields`, `NeuralMemoryFields`, `BatchEventSpec`, `BatchLinkEventSpec`, `Tag` |
 | `pod_os_client/message/intents.py` | `IntentType` enum with `name`, `message_type`, `neural_memory_command` |
+| `pod_os_client/message/tag_format.py` | Tag header parsing, owner normalization, owner-line repair, `apply_tag_owner_output()` |
+| `tests/test_tag_format.py` | Tag format fixtures, header encoding, and tag format validation |
 | `tests/test_validate.py` | 115 tests covering env gate, envelope, per-intent, wire Stage 1/2, format helpers |
 
 ---

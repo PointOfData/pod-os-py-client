@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from pod_os_client.message.types import TagOwnerOutput
 from pod_os_client.message.utils import get_timestamp
 
 if TYPE_CHECKING:
@@ -386,6 +387,10 @@ def _get_event_message_header(msg: "Message") -> str:
         if opts.tag_filter:
             parts.append(f"tag_filter={opts.tag_filter}")
         parts.append(f"tag_format={opts.tag_format if opts.tag_format is not None else 0}")
+        if opts.tag_owner_output == TagOwnerOutput.EVENT_KEY:
+            parts.append("output_tag_owner=Y")
+        elif opts.tag_owner_output == TagOwnerOutput.UNIQUE_ID:
+            parts.append("output_tag_owner=N")
         parts.append(f"request_format={opts.request_format}")
         if opts.first_link:
             parts.append(f"first_link={opts.first_link}")
@@ -458,6 +463,10 @@ def _get_events_for_tag_message_header(msg: "Message") -> str:
             parts.append(f"owner={_force_ascii(opts.owner)}")
         elif opts.owner_unique_id:
             parts.append(f"owner_unique_id={opts.owner_unique_id}")
+        if opts.tag_owner_output == TagOwnerOutput.EVENT_KEY:
+            parts.append("get_tag_owner=Y")
+        elif opts.tag_owner_output == TagOwnerOutput.UNIQUE_ID:
+            parts.append("get_tag_owner_unique_id=Y")
         if hit_tag_filter:
             parts.append(f"hit_tag_filter={_force_ascii(hit_tag_filter)}")
 
