@@ -86,9 +86,9 @@ def test_parse_get_events_for_tags_with_links():
     assert len(events[0].links) == 1
     link = events[0].links[0]
     assert link.id == "link1"
-    assert link.event_a == "evt1"
-    assert link.event_b == "evt2"
-    assert link.strength_b == 0.9
+    assert link.source_id == "evt1"
+    assert link.target_id == "evt2"
+    assert link.strength == 0.9
     assert link.category == "related"
     assert len(link.tags) == 1
     assert link.tags[0].key == "tag_key"
@@ -116,42 +116,34 @@ def test_parse_get_event_response():
     assert tags[0].value == "value1"
     assert len(links) == 1
     assert links[0].id == "link1"
-    assert links[0].event_a == "evt1"
-    assert links[0].event_b == "evt2"
+    assert links[0].source_id == "evt1"
+    assert links[0].target_id == "evt2"
+    assert links[0].strength == 1.0
 
 
-def test_link_strength_is_the_traversed_direction():
-    """
-    ``strength=`` describes the direction being traversed, so it is strength_a.
-
-    A live gateway was given a link with A→B 0.75 and B→A 0.25. Querying the source
-    event returned 0.75; querying the target returned 0.25. Each side reports its own
-    outbound strength, and for a decoded record the queried event is the "a" endpoint.
-
-    This landed in ``strength_b`` for a long time, which made ``strength_a`` read 0.0
-    on every link the client ever decoded. Nothing raised — callers just saw a graph
-    with no forward evidence anywhere.
-    """
+def test_link_strength_is_source_to_target():
+    """GetEvent strength is source → target on Linked, never strength_a/b."""
     msg = Message()
     msg.payload = PayloadFields(
         data="_link=link1\ttarget_event=evt2\ttarget_unique_id=eo_b\tstrength=0.75\tcategory=supplies_to"
     )
     msg.response = ResponseFields()
 
-    _, links, ok = parse_get_event_response(msg, {"event_id": "evt1"})
+    _, links, ok = parse_get_event_response(msg, {"event_id": "evt1", "_unique_id": "eo_a"})
 
     assert ok
     assert len(links) == 1
     link = links[0]
-    assert link.strength_a == 0.75, "traversed direction belongs in strength_a"
-    assert link.strength_b == 0.0, (
-        "no reverse strength is present on this line, so strength_b stays at its "
-        "default rather than borrowing the forward number"
-    )
+    assert link.source_id == "evt1"
+    assert link.source_unique_id == "eo_a"
+    assert link.target_unique_id == "eo_b"
+    assert link.strength == 0.75
+    assert not hasattr(link, "strength_a")
+    assert not hasattr(link, "strength_b")
 
 
-def test_a_link_line_without_a_strength_leaves_both_directions_at_zero():
-    """A missing strength is absence, not an implied value in either direction."""
+def test_a_link_line_without_a_strength_leaves_strength_at_zero():
+    """A missing strength is absence, not an implied value."""
     msg = Message()
     msg.payload = PayloadFields(data="_link=link1\ttarget_event=evt2\tcategory=describes")
     msg.response = ResponseFields()
@@ -159,8 +151,7 @@ def test_a_link_line_without_a_strength_leaves_both_directions_at_zero():
     _, links, ok = parse_get_event_response(msg, {"event_id": "evt1"})
 
     assert ok
-    assert links[0].strength_a == 0.0
-    assert links[0].strength_b == 0.0
+    assert links[0].strength == 0.0
 
 
 def test_an_unparseable_strength_does_not_discard_the_link():
@@ -180,9 +171,9 @@ def test_an_unparseable_strength_does_not_discard_the_link():
 
     assert ok
     assert len(links) == 1
-    assert links[0].event_b == "evt2"
+    assert links[0].target_id == "evt2"
     assert links[0].category == "describes"
-    assert links[0].strength_a == 0.0
+    assert links[0].strength == 0.0
 
 
 def test_parse_store_batch_events_payload():
@@ -288,8 +279,8 @@ def test_parse_malformed_payload():
     assert len(events) == 0
 
 
-def test_parse_get_events_for_tags_links_populate_unique_id_a():
-    """Test that unique_id_a is populated from parent event's unique_id on link records."""
+def test_parse_get_events_for_tags_links_populate_source_unique_id():
+    """GetEventsForTags fills Linked.source_unique_id from the hit when the line omits it."""
     msg = Message()
     msg.payload = PayloadFields(
         data=(
@@ -305,12 +296,13 @@ def test_parse_get_events_for_tags_links_populate_unique_id_a():
     assert len(events) == 1
     assert len(events[0].links) == 1
     link = events[0].links[0]
-    assert link.unique_id_a == "src_uid"
-    assert link.unique_id_b == "tgt_uid"
+    assert link.source_unique_id == "src_uid"
+    assert link.target_unique_id == "tgt_uid"
+    assert link.strength == 0.9
 
 
-def test_parse_get_event_response_links_populate_unique_id_a():
-    """Test that unique_id_a is populated from parent event's unique_id on GetEvent link records."""
+def test_parse_get_event_response_links_populate_source_from_request():
+    """GetEvent source is the request / returned event, not a field on the _link= line."""
     msg = Message()
     msg.payload = PayloadFields(
         data="_link=link1\ttarget_event=evt2\ttarget_unique_id=tgt_uid\tstrength=0.9\tcategory=describes"
@@ -324,5 +316,39 @@ def test_parse_get_event_response_links_populate_unique_id_a():
 
     assert ok
     assert len(links) == 1
-    assert links[0].unique_id_a == "src_uid"
-    assert links[0].unique_id_b == "tgt_uid"
+    assert links[0].source_unique_id == "src_uid"
+    assert links[0].target_unique_id == "tgt_uid"
+    assert links[0].strength == 0.9
+
+
+def test_decode_linked_get_event_viewer_perspective():
+    """Stored A→X and B→A both decode as source=A with that line's strength."""
+    msg = Message()
+    msg.payload = PayloadFields(
+        data=(
+            "_link=+1\tunique_id=lk_a_to_x\ttarget_event=evt_x\ttarget_unique_id=eo_nbr_x"
+            "\tstrength=0.750000\tcategory=supplies_to\n"
+            "_link=+2\tunique_id=lk_b_to_a\ttarget_event=evt_b\ttarget_unique_id=eo_nbr_b"
+            "\tstrength=0.250000\tcategory=supplies_to"
+        )
+    )
+    msg.response = ResponseFields()
+    msg.event = EventFields(id="evt_a", unique_id="eo_seed_a")
+
+    _, links, ok = parse_get_event_response(
+        msg, {"event_id": "evt_a", "_unique_id": "eo_seed_a"}
+    )
+
+    assert ok
+    assert len(links) == 2
+    out, inbound = links
+    assert (out.source_unique_id, out.target_unique_id, out.strength) == (
+        "eo_seed_a",
+        "eo_nbr_x",
+        0.75,
+    )
+    assert (inbound.source_unique_id, inbound.target_unique_id, inbound.strength) == (
+        "eo_seed_a",
+        "eo_nbr_b",
+        0.25,
+    )

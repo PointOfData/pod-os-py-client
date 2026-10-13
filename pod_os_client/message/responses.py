@@ -17,6 +17,7 @@ from pod_os_client.message.types import (
     DateTimeObject,
     EventFields,
     LinkFields,
+    Linked,
     Message,
     PayloadFields,
     StoreBatchEventRecord,
@@ -320,7 +321,7 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
     events_map: dict[str, EventFields] = {}
     event_order: list[str] = []
 
-    links_map: dict[str, LinkFields] = {}
+    links_map: dict[str, Linked] = {}
     links_by_source: dict[str, list[str]] = {}  # source_event_id -> list of link_ids
 
     link_tags_map: dict[str, list[TagOutput]] = {}
@@ -350,10 +351,10 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
             if link_id and link:
                 links_map[link_id] = link
                 # Index by source for O(1) lookup
-                if link.event_a:
-                    if link.event_a not in links_by_source:
-                        links_by_source[link.event_a] = []
-                    links_by_source[link.event_a].append(link_id)
+                if link.source_id:
+                    if link.source_id not in links_by_source:
+                        links_by_source[link.source_id] = []
+                    links_by_source[link.source_id].append(link_id)
 
         elif line.startswith("_linktag="):
             link_id, tag = _parse_link_tag_line(line)
@@ -384,7 +385,7 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
 
         # Get all links for this event via index
         link_ids = links_by_source.get(event_id, [])
-        links: list[LinkFields] = []
+        links: list[Linked] = []
 
         for link_id in link_ids:
             link = links_map.get(link_id)
@@ -395,13 +396,13 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
             if link_id in link_tags_map:
                 link.tags = link_tags_map[link_id]
 
-            # Attach target tags using the link's target event ID
-            if link.event_b and link.event_b in target_tags_map:
-                link.target_tags = target_tags_map[link.event_b]
+            if link.target_id and link.target_id in target_tags_map:
+                link.target_tags = target_tags_map[link.target_id]
 
-            # Populate unique_id_a from parent event's unique_id (links are stored on the source event)
-            if not link.unique_id_a and event.unique_id:
-                link.unique_id_a = event.unique_id
+            if not link.source_unique_id and event.unique_id:
+                link.source_unique_id = event.unique_id
+            if not link.source_id and event.id:
+                link.source_id = event.id
 
             links.append(link)
 
@@ -488,28 +489,25 @@ def _parse_brief_hit_line(line: str, msg: Message) -> None:
     ))
 
 
-def _parse_link_line(line: str) -> tuple[str, LinkFields | None]:
-    """Parse a _link line."""
+def _parse_link_line(line: str) -> tuple[str, Linked | None]:
+    """Parse a GetEventsForTags _link line into viewer-perspective Linked."""
     record_map = _parse_tab_delimited_line(line)
 
     link_id = record_map.get("_link", "")
     if not link_id:
         return "", None
 
-    link = LinkFields(id=link_id)
-
-    link.event_a = record_map.get("source", "")
-    link.event_b = record_map.get("target", "")
+    link = Linked(id=link_id)
+    link.source_id = record_map.get("source", "")
+    link.target_id = record_map.get("target", "")
     link.unique_id = record_map.get("unique_id", "")
-    link.unique_id_a = record_map.get("source_unique_id", "")
-    link.unique_id_b = record_map.get("target_unique_id", "")
-
+    link.source_unique_id = record_map.get("source_unique_id", "")
+    link.target_unique_id = record_map.get("target_unique_id", "")
     if "strength" in record_map:
         try:
-            link.strength_b = float(record_map["strength"])
+            link.strength = float(record_map["strength"])
         except ValueError:
             pass
-
     link.category = record_map.get("category", "")
 
     return link_id, link
@@ -616,7 +614,7 @@ def _unique_id_from_tags(tags: list[TagOutput]) -> str:
 
 def parse_get_event_response(
     msg: Message, header_map: dict[str, str]
-) -> tuple[list[TagOutput], list[LinkFields], bool]:
+) -> tuple[list[TagOutput], list[Linked], bool]:
     """Parse the payload for GetEvent response.
 
     Compiles a complete Event object with Tags and Links. The GetEvent Response
@@ -630,7 +628,7 @@ def parse_get_event_response(
         Tuple of (tags list, links list, success bool)
     """
     tags: list[TagOutput] = []
-    links: list[LinkFields] = []
+    links: list[Linked] = []
 
     if not msg.response:
         return [], [], False
@@ -644,7 +642,7 @@ def parse_get_event_response(
     payload_str: str = msg.payload.data
 
     # Line-based parsing: GetEvent payload uses newline-separated records
-    link_map: dict[str, LinkFields] = {}
+    link_map: dict[str, Linked] = {}
     link_tags_map: dict[str, list[TagOutput]] = {}
     target_tags_map: dict[str, list[TagOutput]] = {}
 
@@ -656,7 +654,7 @@ def parse_get_event_response(
 
         # Parse _link= lines (link records with inline fields)
         if line.startswith("_link="):
-            link = _parse_get_event_link_line(line, header_map)
+            link = _parse_get_event_link_line(line, header_map, msg.event)
             if link:
                 link_map[link.id] = link
             continue
@@ -682,7 +680,7 @@ def parse_get_event_response(
         # Mixed first line: may contain event_tags and _link= on same line
         record_map = _parse_tab_delimited_line(line)
         if "_link" in record_map and record_map["_link"]:
-            link = _parse_get_event_link_line(line, header_map)
+            link = _parse_get_event_link_line(line, header_map, msg.event)
             if link:
                 link_map[link.id] = link
 
@@ -690,11 +688,12 @@ def parse_get_event_response(
     for link in link_map.values():
         if link.id in link_tags_map:
             link.tags = link_tags_map[link.id]
-        if link.event_b and link.event_b in target_tags_map:
-            link.target_tags = target_tags_map[link.event_b]
-        # Populate unique_id_a from parent event's unique_id (links are stored on the source event)
-        if not link.unique_id_a and msg.event and msg.event.unique_id:
-            link.unique_id_a = msg.event.unique_id
+        if link.target_id and link.target_id in target_tags_map:
+            link.target_tags = target_tags_map[link.target_id]
+        if not link.source_unique_id and msg.event and msg.event.unique_id:
+            link.source_unique_id = msg.event.unique_id
+        if not link.source_id and msg.event and msg.event.id:
+            link.source_id = msg.event.id
         links.append(link)
 
     return tags, links, True
@@ -732,49 +731,46 @@ def _parse_event_tag_headers(msg: Message, header_map: dict[str, str]) -> list[T
     return results
 
 
-def _parse_get_event_link_line(line: str, header_map: dict[str, str]) -> LinkFields | None:
-    """Parse a _link= line from GetEvent payload.
+def _parse_get_event_link_line(
+    line: str, header_map: dict[str, str], request: EventFields | None = None
+) -> Linked | None:
+    """Parse a GetEvent _link= line into viewer-perspective Linked.
 
     Format: _link={linkId}	unique_id=	target_event=	target_unique_id=	strength=	link_time=	category=
+    Source is the request / returned event, not a field on the line.
     """
     record_map = _parse_tab_delimited_line(line)
     link_id = record_map.get("_link", "")
     if not link_id:
         return None
 
-    link = LinkFields(id=link_id)
-
-    link.event_b = record_map.get("target_event", "")
-    link.unique_id_b = record_map.get("target_unique_id", "")
+    link = Linked(id=link_id)
+    link.target_id = record_map.get("target_event", "")
+    link.target_unique_id = record_map.get("target_unique_id", "")
     link.unique_id = record_map.get("unique_id", "")
-
     if "strength" in record_map:
         try:
-            # The wire carries one strength per link line, and it is the strength in
-            # the direction being traversed: querying the source event returns A→B,
-            # querying the target event returns B→A. Measured against a live gateway
-            # with a deliberately asymmetric link (A→B 0.75, B→A 0.25), each side
-            # reported its own direction.
-            #
-            # That makes it strength_a for this record, whose "a" endpoint is the
-            # event that was queried. It used to land in strength_b, which left
-            # strength_a reading 0.0 on every link ever decoded — so a caller
-            # checking forward strength saw "no evidence" for a fully populated
-            # graph, and a caller reading strength_b got the forward number under
-            # the name of the reverse one.
-            link.strength_a = float(record_map["strength"])
+            link.strength = float(record_map["strength"])
         except ValueError:
             pass
-
     link.category = record_map.get("category", "")
 
-    # EventA is the main event (source); get from header when available
+    if request is not None:
+        link.source_id = request.id or ""
+        link.source_unique_id = request.unique_id or ""
     if header_map:
-        link.event_a = (
-            header_map.get("event_id")
-            or header_map.get("_event_id")
-            or ""
-        )
+        if not link.source_id:
+            link.source_id = (
+                header_map.get("event_id")
+                or header_map.get("_event_id")
+                or ""
+            )
+        if not link.source_unique_id:
+            link.source_unique_id = (
+                header_map.get("_unique_id")
+                or header_map.get("unique_id")
+                or ""
+            )
 
     return link
 

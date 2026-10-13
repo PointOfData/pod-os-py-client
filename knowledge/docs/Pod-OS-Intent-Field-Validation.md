@@ -246,6 +246,8 @@ payload = format_batch_events_payload([
 | `neural_memory.get_event.link_count` | `link_count` | optional; written when `> 0` |
 | `message_id` | `_msg_id` | optional; last field, no trailing tab |
 
+GetEvent / GetEventsForTags decode adjacency as **`Linked`** (not write `LinkFields`). Perspective is the searched/returned object. `Linked.strength` is always source → target. GetEvent does not put source on the `_link=` line — it is the request/returned `event.id` / `event.unique_id`. GetEventsForTags maps `source` / `source_unique_id` / `target` / `target_unique_id` / `strength`. `LinkFields.strength_a` / `strength_b` are write-only.
+
 ---
 
 #### GetEventsForTags

@@ -226,7 +226,8 @@ class Client:
         encoded = self._encode_and_validate(msg, IntentType.GatewayDisconnect)
         if not self._connection or not self._connection.is_connected():
             return
-        await self._send_bytes(encoded)
+        # close() clears _connected before this send; socket liveness is the gate.
+        await self._send_bytes(encoded, require_connected=False)
 
     async def send_control_message(self, data: bytes) -> None:
         """Send a pre-encoded control message without waiting for a response."""

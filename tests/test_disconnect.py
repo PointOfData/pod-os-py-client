@@ -55,6 +55,7 @@ async def _close_sends_disconnect_before_tcp() -> None:
     )
     client = Client(cfg)
     client._connection = conn
+    client._connected = True
 
     await client.close()
 

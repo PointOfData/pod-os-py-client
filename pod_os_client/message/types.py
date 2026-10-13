@@ -16,6 +16,7 @@ __all__ = [
     "GetEventsForTagsOptions",
     "SearchOptions",
     "LinkFields",
+    "Linked",
     "ResponseFields",
     "StoreBatchEventRecord",
     "StoreLinkBatchEventRecord",
@@ -74,7 +75,7 @@ class EventFields:
     location_separator: str = "|"  # Location delimiter
     type: str = ""  # Developer-defined event type
     tags: list["TagOutput"] = field(default_factory=list)  # Tags for the event
-    links: list["LinkFields"] = field(default_factory=list)  # Links for the event
+    links: list["Linked"] = field(default_factory=list)  # Viewer-perspective adjacency from GetEvent / GFT
     payload_data: Optional["PayloadFields"] = None  # Payload data
     status: str = ""  # Status of the event; used in StoreBatchEvents response
     hits: int = 0  # Total search term match hits (from GetEventsForTags response)
@@ -208,6 +209,25 @@ class LinkFields:
     status: str = ""  # Status of the link; used in StoreBatchLinks response
     message: str = ""  # Message of the link; used in StoreBatchLinks response
     link_error_code: int | None = None  # Error code for link operations; used in StoreBatchLinks response
+
+
+@dataclass(slots=True)
+class Linked:
+    """One directed adjacency from the searched or returned event to a neighbor.
+
+    Strength is always source → target. Write-side A/B weights stay on LinkFields.
+    """
+
+    id: str = ""
+    unique_id: str = ""
+    source_id: str = ""
+    source_unique_id: str = ""
+    target_id: str = ""
+    target_unique_id: str = ""
+    strength: float = 0.0
+    category: str = ""
+    tags: list["TagOutput"] = field(default_factory=list)
+    target_tags: list["TagOutput"] = field(default_factory=list)
 
 
 @dataclass(slots=True)
