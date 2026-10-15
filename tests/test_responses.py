@@ -352,3 +352,85 @@ def test_decode_linked_get_event_viewer_perspective():
         "eo_nbr_b",
         0.25,
     )
+
+
+def test_decode_linked_get_event_shared_link_event_id():
+    """Links written in one batch share a _link event id and stay distinct by unique_id."""
+    shared = "+1792088206.138462"
+    msg = Message()
+    msg.payload = PayloadFields(
+        data=(
+            f"_link={shared}\tunique_id=lk_a_to_x\ttarget_event=evt_x\ttarget_unique_id=eo_nbr_x"
+            "\tstrength=0.750000\tcategory=supplies_to\n"
+            f"_linktag\tevent_id={shared}\tunique=lk_a_to_x\tfreq=1\tvalue=endpoint_a=eo_seed_a\n"
+            f"_link={shared}\tunique_id=lk_b_to_a\ttarget_event=evt_b\ttarget_unique_id=eo_nbr_b"
+            "\tstrength=0.250000\tcategory=supplies_to\n"
+            f"_linktag\tevent_id={shared}\tunique=lk_b_to_a\tfreq=1\tvalue=endpoint_a=eo_nbr_b"
+        )
+    )
+    msg.response = ResponseFields()
+    msg.event = EventFields(id="evt_a", unique_id="eo_seed_a")
+
+    _, links, ok = parse_get_event_response(
+        msg, {"event_id": "evt_a", "_unique_id": "eo_seed_a"}
+    )
+
+    assert ok
+    assert len(links) == 2
+    by_uid = {lk.unique_id: lk for lk in links}
+    out = by_uid["lk_a_to_x"]
+    inbound = by_uid["lk_b_to_a"]
+    assert (out.source_unique_id, out.target_unique_id, out.strength) == (
+        "eo_seed_a",
+        "eo_nbr_x",
+        0.75,
+    )
+    assert len(out.tags) == 1
+    assert out.tags[0].key == "endpoint_a"
+    assert out.tags[0].value == "eo_seed_a"
+    assert (inbound.source_unique_id, inbound.target_unique_id, inbound.strength) == (
+        "eo_seed_a",
+        "eo_nbr_b",
+        0.25,
+    )
+    assert len(inbound.tags) == 1
+    assert inbound.tags[0].value == "eo_nbr_b"
+
+
+def test_decode_linked_get_events_for_tags_shared_link_event_id():
+    """Search rows that share a _link event id both survive, and share the event's tags."""
+    shared = "+1792088467.007218"
+    msg = Message()
+    msg.payload = PayloadFields(
+        data=(
+            "_event_id=evt_a\tunique_id=eo_seed_a\ttag:1:_unique_id=eo_seed_a\n"
+            f"_link={shared}\tsource=evt_a\tsource_unique_id=eo_seed_a\ttarget=evt_x"
+            "\ttarget_unique_id=eo_nbr_x\tstrength=0.750000\tcategory=supplies_to\tunique_id=lk_a_to_x\n"
+            f"_linktag={shared}\tfreq=1\tvalue=endpoint_a=eo_seed_a\n"
+            f"_link={shared}\tsource=evt_a\tsource_unique_id=eo_seed_a\ttarget=evt_b"
+            "\ttarget_unique_id=eo_nbr_b\tstrength=0.250000\tcategory=supplies_to\tunique_id=lk_b_to_a"
+        )
+    )
+    msg.response = ResponseFields()
+
+    events, ok = parse_get_events_for_tags_payload(msg)
+
+    assert ok
+    assert len(events) == 1
+    links = events[0].links
+    assert len(links) == 2
+    by_uid = {lk.unique_id: lk for lk in links}
+    out = by_uid["lk_a_to_x"]
+    inbound = by_uid["lk_b_to_a"]
+    assert (out.source_unique_id, out.target_unique_id, out.strength) == (
+        "eo_seed_a",
+        "eo_nbr_x",
+        0.75,
+    )
+    assert (inbound.source_unique_id, inbound.target_unique_id, inbound.strength) == (
+        "eo_seed_a",
+        "eo_nbr_b",
+        0.25,
+    )
+    assert len(out.tags) == 1 and out.tags[0].value == "eo_seed_a"
+    assert len(inbound.tags) == 1 and inbound.tags[0].value == "eo_seed_a"

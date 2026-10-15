@@ -349,12 +349,16 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
         elif line.startswith("_link="):
             link_id, link = _parse_link_line(line)
             if link_id and link:
-                links_map[link_id] = link
+                # Prefer unique_id: ENM may reuse one _link event id for both viewer rows.
+                map_key = link_id
+                if link.unique_id:
+                    map_key = "u:" + link.unique_id
+                links_map[map_key] = link
                 # Index by source for O(1) lookup
                 if link.source_id:
                     if link.source_id not in links_by_source:
                         links_by_source[link.source_id] = []
-                    links_by_source[link.source_id].append(link_id)
+                    links_by_source[link.source_id].append(map_key)
 
         elif line.startswith("_linktag="):
             link_id, tag = _parse_link_tag_line(line)
@@ -387,14 +391,16 @@ def parse_get_events_for_tags_payload(msg: Message) -> tuple[list[EventFields], 
         link_ids = links_by_source.get(event_id, [])
         links: list[Linked] = []
 
-        for link_id in link_ids:
-            link = links_map.get(link_id)
+        for map_key in link_ids:
+            link = links_map.get(map_key)
             if not link:
                 continue
 
-            # Attach link tags (O(1) lookup)
-            if link_id in link_tags_map:
-                link.tags = link_tags_map[link_id]
+            # GFT _linktag= is keyed by link event id, which several rows may share.
+            if link.id in link_tags_map:
+                link.tags = link_tags_map[link.id]
+            elif map_key in link_tags_map:
+                link.tags = link_tags_map[map_key]
 
             if link.target_id and link.target_id in target_tags_map:
                 link.target_tags = target_tags_map[link.target_id]
@@ -641,9 +647,12 @@ def parse_get_event_response(
 
     payload_str: str = msg.payload.data
 
-    # Line-based parsing: GetEvent payload uses newline-separated records
+    # Line-based parsing: GetEvent payload uses newline-separated records.
+    # Key links by unique_id when present: links stored in one batch can share a
+    # _link event id and differ by unique_id / target / strength.
     link_map: dict[str, Linked] = {}
-    link_tags_map: dict[str, list[TagOutput]] = {}
+    link_tags_by_unique: dict[str, list[TagOutput]] = {}
+    link_tags_by_id: dict[str, list[TagOutput]] = {}
     target_tags_map: dict[str, list[TagOutput]] = {}
 
     lines = payload_str.split("\n")
@@ -656,16 +665,18 @@ def parse_get_event_response(
         if line.startswith("_link="):
             link = _parse_get_event_link_line(line, header_map, msg.event)
             if link:
-                link_map[link.id] = link
+                link_map[_get_event_link_map_key(link)] = link
             continue
 
-        # Parse _linktag lines
+        # Parse _linktag lines (event_id = link event id; unique = link unique id)
         if line.startswith("_linktag\t") or line == "_linktag":
-            link_id, tag = _parse_get_event_link_tag_line(line)
-            if link_id and tag:
-                if link_id not in link_tags_map:
-                    link_tags_map[link_id] = []
-                link_tags_map[link_id].append(tag)
+            link_id, unique_id, tag = _parse_get_event_link_tag_line(line)
+            if tag is None:
+                continue
+            if unique_id:
+                link_tags_by_unique.setdefault(unique_id, []).append(tag)
+            elif link_id:
+                link_tags_by_id.setdefault(link_id, []).append(tag)
             continue
 
         # Parse _target_event_tag lines
@@ -682,12 +693,15 @@ def parse_get_event_response(
         if "_link" in record_map and record_map["_link"]:
             link = _parse_get_event_link_line(line, header_map, msg.event)
             if link:
-                link_map[link.id] = link
+                link_map[_get_event_link_map_key(link)] = link
 
     # Consolidate links with their tags
     for link in link_map.values():
-        if link.id in link_tags_map:
-            link.tags = link_tags_map[link.id]
+        if link.unique_id:
+            if link.unique_id in link_tags_by_unique:
+                link.tags = link_tags_by_unique[link.unique_id]
+        elif link.id in link_tags_by_id:
+            link.tags = link_tags_by_id[link.id]
         if link.target_id and link.target_id in target_tags_map:
             link.target_tags = target_tags_map[link.target_id]
         if not link.source_unique_id and msg.event and msg.event.unique_id:
@@ -729,6 +743,17 @@ def _parse_event_tag_headers(msg: Message, header_map: dict[str, str]) -> list[T
             results.append(tag)
     results.sort(key=lambda tag: tag.tag_number)
     return results
+
+
+def _get_event_link_map_key(link: Linked) -> str:
+    """Distinguish viewer rows that share one _link event id.
+
+    ENM reuses one event id for every link written in the same batch. unique_id
+    is what separates those rows.
+    """
+    if link.unique_id:
+        return "u:" + link.unique_id
+    return "i:" + link.id
 
 
 def _parse_get_event_link_line(
@@ -775,16 +800,18 @@ def _parse_get_event_link_line(
     return link
 
 
-def _parse_get_event_link_tag_line(line: str) -> tuple[str, TagOutput | None]:
+def _parse_get_event_link_tag_line(line: str) -> tuple[str, str, TagOutput | None]:
     """Parse a _linktag line from GetEvent payload.
 
     Format: _linktag	event_id={linkId}	unique=	freq=	timestamp=	value=
-    The link ID comes from event_id, not _linktag.
+    event_id is the link event id. unique, when present, is the link unique id
+    used to attach the tag when several rows share that event id.
     """
     record_map = _parse_tab_delimited_line(line)
     link_id = record_map.get("event_id", "")
-    if not link_id:
-        return "", None
+    unique_id = record_map.get("unique", "")
+    if not link_id and not unique_id:
+        return "", "", None
 
     tag = TagOutput()
 
@@ -803,7 +830,7 @@ def _parse_get_event_link_tag_line(line: str) -> tuple[str, TagOutput | None]:
         else:
             tag.value = value
 
-    return link_id, tag
+    return link_id, unique_id, tag
 
 
 def _parse_get_event_target_tag_line(line: str) -> tuple[str, TagOutput | None]:
