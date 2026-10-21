@@ -491,6 +491,20 @@ class TestLinkEvent:
         errs = validate_message(msg)
         assert _find_error(errs, rule="required", wire_field="strength_b")
 
+    def test_negative_strength_is_valid(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        msg = self._valid_link_msg(strength_a=-1.0, strength_b=-0.25)
+        errs = validate_message(msg)
+        assert not _find_error(errs, wire_field="strength_a")
+        assert not _find_error(errs, wire_field="strength_b")
+
+    def test_non_finite_or_blank_link_fields(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        nan = self._valid_link_msg(strength_a=float("nan"))
+        assert _find_error(validate_message(nan), rule="required", wire_field="strength_a")
+        blank = self._valid_link_msg(category="   ")
+        assert _find_error(validate_message(blank), rule="required", wire_field="category")
+
     def test_missing_timestamp(self, monkeypatch):
         _enable_validation(monkeypatch)
         msg = self._valid_link_msg(timestamp="")
@@ -898,6 +912,24 @@ class TestWireNeuralMemoryRequest:
         e = _find_error(errs, wire_field="buffer_results")
         assert e is not None
         assert e.severity == "warn"
+
+    def test_link_zero_strength(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        raw = _build_raw_message(
+            header="_db_cmd=link\tevent_id_a=a\tevent_id_b=b\tstrength_a=0\tstrength_b=-1\tcategory=related\ttimestamp=+1\towner_event_id=o"
+        )
+        errs = validate_raw_message(raw)
+        assert _find_error(errs, rule="header_value", wire_field="strength_a")
+        assert not _find_error(errs, wire_field="strength_b")
+
+    def test_link_unparseable_strength_is_an_error(self, monkeypatch):
+        _enable_validation(monkeypatch)
+        raw = _build_raw_message(
+            header="_db_cmd=link\tevent_id_a=a\tevent_id_b=b\tstrength_a=1e9999\tstrength_b=nan\tcategory=related\ttimestamp=+1\towner_event_id=o"
+        )
+        errs = validate_raw_message(raw)
+        assert _find_error(errs, rule="header_value", wire_field="strength_a")
+        assert _find_error(errs, rule="header_value", wire_field="strength_b")
 
     def test_link_missing_fields(self, monkeypatch):
         _enable_validation(monkeypatch)

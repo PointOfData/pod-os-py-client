@@ -187,10 +187,10 @@ def test_format_batch_link_events_payload_single():
 def test_format_batch_link_events_payload_multiple():
     """Test formatting multiple link events."""
     event1 = EventFields(unique_id="uuid1")
-    link1 = LinkFields(event_a="e1", event_b="e2", strength_a=1.0, strength_b=1.0)
+    link1 = LinkFields(event_a="e1", event_b="e2", strength_a=1.0, strength_b=1.0, category="related")
     
     event2 = EventFields(unique_id="uuid2")
-    link2 = LinkFields(event_a="e3", event_b="e4", strength_a=0.5, strength_b=0.5)
+    link2 = LinkFields(event_a="e3", event_b="e4", strength_a=0.5, strength_b=0.5, category="related")
     
     specs = [
         BatchLinkEventSpec(event=event1, link=link1),
@@ -213,6 +213,7 @@ def test_format_batch_link_events_payload_with_owner():
         event_b="evt2",
         strength_a=1.0,
         strength_b=1.0,
+        category="related",
         owner_unique_id="owner_uuid",
         owner_event_id="owner_event_id_val",
     )
@@ -222,6 +223,81 @@ def test_format_batch_link_events_payload_with_owner():
     
     assert "owner_unique_id=owner_uuid" in result
     assert "owner_event_id=owner_event_id_val" in result
+
+
+def test_format_batch_link_events_payload_rejects_zero_strength_and_missing_category():
+    """Zero strength or a missing category must not be written onto the wire."""
+    zero = BatchLinkEventSpec(
+        event=EventFields(unique_id="uuid1"),
+        link=LinkFields(event_a="a", event_b="b", strength_a=1.0, strength_b=0.0, category="related"),
+    )
+    with pytest.raises(EncodeError, match="strength_b"):
+        format_batch_link_events_payload([zero])
+
+    missing = BatchLinkEventSpec(
+        event=EventFields(unique_id="uuid1"),
+        link=LinkFields(event_a="a", event_b="b", strength_a=-1.0, strength_b=0.5, category=""),
+    )
+    with pytest.raises(EncodeError, match="category"):
+        format_batch_link_events_payload([missing])
+
+    # == 0 misses these; they must not be formatted as strength_a=None / strength_a=0.0.
+    unset = BatchLinkEventSpec(
+        event=EventFields(unique_id="uuid1"),
+        link=LinkFields(event_a="a", event_b="b", strength_a=None, strength_b=1.0, category="related"),
+    )
+    with pytest.raises(EncodeError, match="strength_a"):
+        format_batch_link_events_payload([unset])
+
+    textual_zero = BatchLinkEventSpec(
+        event=EventFields(unique_id="uuid1"),
+        link=LinkFields(event_a="a", event_b="b", strength_a="0.0", strength_b=1.0, category="related"),
+    )
+    with pytest.raises(EncodeError, match="strength_a"):
+        format_batch_link_events_payload([textual_zero])
+
+    blank_category = BatchLinkEventSpec(
+        event=EventFields(unique_id="uuid1"),
+        link=LinkFields(event_a="a", event_b="b", strength_a=1.0, strength_b=1.0, category="   "),
+    )
+    with pytest.raises(EncodeError, match="category"):
+        format_batch_link_events_payload([blank_category])
+
+
+def test_link_event_header_rejects_missing_link_and_writes_negative_strength():
+    """LinkEvent uses the same strength and category gate as batch links."""
+    missing = _minimal_message(intent=IntentType.LinkEvent.name)
+    with pytest.raises(EncodeError, match="link is missing"):
+        encode_message(missing, IntentType.LinkEvent, "conv-1")
+
+    msg = _minimal_message(
+        intent=IntentType.LinkEvent.name,
+        neural_memory=NeuralMemoryFields(
+            link=LinkFields(
+                event_a="a",
+                event_b="b",
+                strength_a=-0.25,
+                strength_b=1.0,
+                category="related",
+            )
+        ),
+    )
+    encoded = encode_message(msg, IntentType.LinkEvent, "conv-1")
+    header = encoded.decode("utf-8", errors="replace")
+    assert "strength_a=-0.25" in header
+    assert "strength_b=1.0" in header
+    assert "category=related" in header
+
+
+def test_format_batch_link_events_payload_allows_negative_strength():
+    spec = BatchLinkEventSpec(
+        event=EventFields(unique_id="uuid1"),
+        link=LinkFields(event_a="a", event_b="b", strength_a=-0.25, strength_b=1.0, category="related"),
+    )
+    result = format_batch_link_events_payload([spec])
+    assert "strength_a=-0.25" in result
+    assert "strength_b=1.0" in result
+    assert "category=related" in result
 
 
 def test_format_batch_events_payload_tag_without_key():
@@ -356,7 +432,7 @@ def test_encode_store_batch_events_wrong_type_raises():
 def test_encode_store_batch_links_structured_payload():
     """StoreBatchLinks with list[BatchLinkEventSpec] produces formatted payload body."""
     event = EventFields(unique_id="ev1")
-    link = LinkFields(event_a="a", event_b="b", strength_a=1.0, strength_b=1.0)
+    link = LinkFields(event_a="a", event_b="b", strength_a=1.0, strength_b=1.0, category="related")
     spec = BatchLinkEventSpec(event=event, link=link)
     msg = _minimal_message(
         intent=IntentType.StoreBatchLinks.name,

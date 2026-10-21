@@ -10,6 +10,7 @@ check with zero overhead.
 """
 
 import json
+import math
 import os
 import urllib.error
 import urllib.parse
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from pod_os_client.message.constants import MAX_MESSAGE_SIZE
+from pod_os_client.message.header import link_category_is_usable, link_strength_is_usable
 from pod_os_client.message.types import TagOwnerOutput
 
 if TYPE_CHECKING:
@@ -712,7 +714,7 @@ def _validate_link_event(msg: "Message") -> ValidationErrors:
             "message/types.py:LinkFields", "message/header.py:_link_events_message_header",
         ))
 
-    if not lk.category:
+    if not link_category_is_usable(lk.category):
         errs.append(_required_field(
             intent, "neural_memory.link.category", "category",
             "Set neural_memory.link.category to a non-empty relationship string.",
@@ -720,18 +722,18 @@ def _validate_link_event(msg: "Message") -> ValidationErrors:
             "message/types.py:LinkFields.category", "message/header.py:_link_events_message_header",
         ))
 
-    if lk.strength_a == 0:
+    if not link_strength_is_usable(lk.strength_a):
         errs.append(_required_field(
             intent, "neural_memory.link.strength_a", "strength_a",
-            "Set neural_memory.link.strength_a to the A→B link strength (e.g. 1.0).",
+            "Set neural_memory.link.strength_a to a finite, non-zero A→B link strength (e.g. 1.0 or -1.0).",
             "msg.neural_memory.link.strength_a = 1.0",
             "message/types.py:LinkFields.strength_a",
         ))
 
-    if lk.strength_b == 0:
+    if not link_strength_is_usable(lk.strength_b):
         errs.append(_required_field(
             intent, "neural_memory.link.strength_b", "strength_b",
-            "Set neural_memory.link.strength_b to the B→A link strength (e.g. 1.0).",
+            "Set neural_memory.link.strength_b to a finite, non-zero B→A link strength (e.g. 1.0 or -1.0).",
             "msg.neural_memory.link.strength_b = 1.0",
             "message/types.py:LinkFields.strength_b",
         ))
@@ -1118,7 +1120,7 @@ def _validate_payload(msg: "Message") -> ValidationErrors:
                     'links[i].link.event_a = "a"\nlinks[i].link.event_b = "b"',
                     "message/types.py:LinkFields",
                 ))
-            if not spec.link.category:
+            if not link_category_is_usable(spec.link.category):
                 errs.append(_errorf(
                     "error", intent, f"{lk_path}.category", "category", "payload_format",
                     f"BatchLinkEventSpec[{i}]: link.category is required.",
@@ -1126,19 +1128,19 @@ def _validate_payload(msg: "Message") -> ValidationErrors:
                     'links[i].link.category = "related"',
                     "message/types.py:LinkFields.category",
                 ))
-            if spec.link.strength_a == 0:
+            if not link_strength_is_usable(spec.link.strength_a):
                 errs.append(_errorf(
                     "error", intent, f"{lk_path}.strength_a", "strength_a", "payload_format",
-                    f"BatchLinkEventSpec[{i}]: link.strength_a is required.",
-                    "Set link.strength_a to a non-zero float.",
+                    f"BatchLinkEventSpec[{i}]: link.strength_a must be a finite, non-zero float.",
+                    "Set link.strength_a to a finite, non-zero float.",
                     "links[i].link.strength_a = 1.0",
                     "message/types.py:LinkFields.strength_a",
                 ))
-            if spec.link.strength_b == 0:
+            if not link_strength_is_usable(spec.link.strength_b):
                 errs.append(_errorf(
                     "error", intent, f"{lk_path}.strength_b", "strength_b", "payload_format",
-                    f"BatchLinkEventSpec[{i}]: link.strength_b is required.",
-                    "Set link.strength_b to a non-zero float.",
+                    f"BatchLinkEventSpec[{i}]: link.strength_b must be a finite, non-zero float.",
+                    "Set link.strength_b to a finite, non-zero float.",
                     "links[i].link.strength_b = 1.0",
                     "message/types.py:LinkFields.strength_b",
                 ))
@@ -1464,6 +1466,23 @@ def _has_header(h: dict[str, str], key: str) -> bool:
     return v is not None and v != ""
 
 
+def _wire_strength_problem(value: str) -> str | None:
+    """Classify a present strength header value.
+
+    Returns ``"zero"``, ``"invalid"``, or None. Overflow is invalid: ``float()``
+    raises OverflowError for values such as ``1e9999``, which is not a ValueError.
+    """
+    try:
+        number = float(value.strip())
+    except (ValueError, OverflowError):
+        return "invalid"
+    if not math.isfinite(number):
+        return "invalid"
+    if number == 0.0:
+        return "zero"
+    return None
+
+
 def _validate_wire_header(message_type: int, h: dict[str, str],
                            payload_length: int) -> ValidationErrors:
     """Stage 2 validation: per-intent header field checks."""
@@ -1737,6 +1756,27 @@ def _validate_neural_memory_request_header(cmd: str, h: dict[str, str],
                 "msg.neural_memory.link.strength_b = 1.0",
                 "message/header.py:_link_events_message_header",
             ))
+        for field in ("strength_a", "strength_b"):
+            value = h.get(field)
+            if not value:
+                continue
+            problem = _wire_strength_problem(value)
+            if problem == "zero":
+                errs.append(_errorf(
+                    "error", ctx, f"neural_memory.link.{field}", field, "header_value",
+                    f"{field} must be non-zero (positive and negative values are allowed).",
+                    f"Set neural_memory.link.{field} to a non-zero strength such as 1.0 or -1.0.",
+                    f"msg.neural_memory.link.{field} = 1.0",
+                    "message/header.py:_link_events_message_header",
+                ))
+            elif problem == "invalid":
+                errs.append(_errorf(
+                    "error", ctx, f"neural_memory.link.{field}", field, "header_value",
+                    f"{field} must be a finite, non-zero float (positive and negative values are allowed).",
+                    f"Set neural_memory.link.{field} to a finite strength such as 1.0 or -1.0.",
+                    f"msg.neural_memory.link.{field} = 1.0",
+                    "message/header.py:_link_events_message_header",
+                ))
         if not _has_header(h, "category"):
             errs.append(_errorf(
                 "error", ctx, "neural_memory.link.category", "category", "header_missing",

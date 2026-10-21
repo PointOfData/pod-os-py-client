@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from pod_os_client.errors import EncodeError, EncodeErrorCode
 from pod_os_client.message.constants import MAX_MESSAGE_SIZE
-from pod_os_client.message.header import construct_header
+from pod_os_client.message.header import construct_header, require_link_wire_fields
 
 from pod_os_client.message.types import (
     BatchEventSpec,
@@ -162,7 +162,7 @@ def format_batch_link_events_payload(events: list["BatchLinkEventSpec"]) -> str:
         >>> from pod_os_client.message.types import BatchLinkEventSpec, EventFields, LinkFields
         >>> spec = BatchLinkEventSpec(
         ...     event=EventFields(unique_id="event1"),
-        ...     link=LinkFields(event_a="evt1", event_b="evt2", strength_a=1.0, strength_b=0.5)
+        ...     link=LinkFields(event_a="evt1", event_b="evt2", strength_a=1.0, strength_b=0.5, category="related")
         ... )
         >>> payload = format_batch_link_events_payload([spec])
     """
@@ -171,10 +171,13 @@ def format_batch_link_events_payload(events: list["BatchLinkEventSpec"]) -> str:
 
     lines: list[str] = []
 
-    for spec in events:
+    for i, spec in enumerate(events):
         fields: list[str] = []
         event = spec.event
         link = spec.link
+        require_link_wire_fields(
+            link, f"batch link {i}", EncodeErrorCode.ENCODE_BATCH_PAYLOAD_FAILED
+        )
 
         # Format EventFields
         if event.unique_id:
@@ -207,16 +210,9 @@ def format_batch_link_events_payload(events: list["BatchLinkEventSpec"]) -> str:
             fields.append(f"unique_id_a={link.unique_id_a}")
         if link.unique_id_b:
             fields.append(f"unique_id_b={link.unique_id_b}")
-        if link.strength_a:
-            fields.append(f"strength_a={link.strength_a}")
-        else:
-            fields.append(f"strength_a=0.0")
-        if link.strength_b:
-            fields.append(f"strength_b={link.strength_b}")
-        else:
-            fields.append(f"strength_b=0.0")
-        if link.category:
-            fields.append(f"category={link.category}")
+        fields.append(f"strength_a={link.strength_a}")
+        fields.append(f"strength_b={link.strength_b}")
+        fields.append(f"category={link.category}")
         if link.owner_unique_id:
             fields.append(f"owner_unique_id={link.owner_unique_id}")
         if link.owner_event_id:

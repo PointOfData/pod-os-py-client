@@ -1,7 +1,9 @@
 """Pod-OS message header construction."""
 
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, Any
 
+from pod_os_client.errors import EncodeError, EncodeErrorCode
 from pod_os_client.message.types import TagOwnerOutput
 from pod_os_client.message.utils import get_timestamp
 
@@ -9,7 +11,76 @@ if TYPE_CHECKING:
     from pod_os_client.message.intents import Intent
     from pod_os_client.message.types import Message
 
-__all__ = ["construct_header"]
+__all__ = ["construct_header", "require_link_wire_fields"]
+
+
+def link_strength_is_usable(value: Any) -> bool:
+    """True for a finite, non-zero strength the actor will store.
+
+    Positive and negative ints and floats are allowed. bool is rejected because
+    it is an int subclass and would be written as ``True`` or ``False``.
+    Numeric strings are allowed only when ``float()`` yields a finite non-zero
+    value, so ``"0"`` and ``"0.0"`` cannot pass a raw ``== 0`` check.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text != value:
+            return False
+        try:
+            number = float(text)
+        except (ValueError, OverflowError):
+            return False
+    elif isinstance(value, (int, float)):
+        try:
+            number = float(value)
+        except OverflowError:
+            return False
+    else:
+        return False
+    return math.isfinite(number) and number != 0.0
+
+
+def link_category_is_usable(value: Any) -> bool:
+    """True when category is a string the actor will keep.
+
+    Blank and whitespace-only values are rejected. The wire decoder strips
+    header values, so a whitespace category is stored as missing.
+    """
+    return isinstance(value, str) and bool(value.strip())
+
+
+def require_link_wire_fields(link: Any, where: str, code: EncodeErrorCode) -> None:
+    """Reject a link the actor would drop instead of saving.
+
+    strength_a and strength_b must be finite and non-zero. Positive and negative
+    values are allowed. category must be a non-empty string.
+    """
+    if link is None:
+        raise EncodeError(
+            f"{where}: link is missing; strength_a, strength_b, and category are required",
+            field="link",
+            code=code,
+        )
+    if not link_strength_is_usable(getattr(link, "strength_a", None)):
+        raise EncodeError(
+            f"{where}: strength_a must be a finite, non-zero number (positive and negative values are allowed)",
+            field="strength_a",
+            code=code,
+        )
+    if not link_strength_is_usable(getattr(link, "strength_b", None)):
+        raise EncodeError(
+            f"{where}: strength_b must be a finite, non-zero number (positive and negative values are allowed)",
+            field="strength_b",
+            code=code,
+        )
+    if not link_category_is_usable(getattr(link, "category", None)):
+        raise EncodeError(
+            f"{where}: category is required",
+            field="category",
+            code=code,
+        )
 
 
 def construct_header(msg: "Message", intent: "Intent", connection_id_uuid: str) -> str:
@@ -292,9 +363,10 @@ def _link_events_message_header(msg: "Message") -> str:
     if msg.message_id:
         parts.append(f"_msg_id={msg.message_id}\t")
 
-    if msg.neural_memory and msg.neural_memory.link:
-        link = msg.neural_memory.link
+    link = msg.neural_memory.link if msg.neural_memory else None
+    require_link_wire_fields(link, "LinkEvent", EncodeErrorCode.ENCODE_HEADER_CONSTRUCTION_FAILED)
 
+    if link is not None:
         # Prefer UniqueIdA/B; otherwise use EventA/B
         if link.unique_id_a and link.unique_id_b:
             parts.append(f"unique_id_a={link.unique_id_a}\t")
