@@ -13,6 +13,14 @@ from pod_os_client.message.encoder import (
 from pod_os_client.message.header import construct_header
 from pod_os_client.message.intents import Intent
 from pod_os_client.message.tag_format import apply_tag_owner_output
+from pod_os_client.message.tag_history import (
+    TagSighting,
+    TagTerm,
+    field_history,
+    latest_by_key,
+    suggest_delta,
+    tag_search_clauses,
+)
 from pod_os_client.message.types import Envelope, EventFields, Message, TagOwnerOutput
 from pod_os_client.message.utils import get_timestamp, get_timestamp_from_datetime
 from pod_os_client.message.validate import (
@@ -45,6 +53,12 @@ __all__ = [
     # Tag metadata
     "TagOwnerOutput",
     "apply_tag_owner_output",
+    "TagSighting",
+    "TagTerm",
+    "field_history",
+    "latest_by_key",
+    "suggest_delta",
+    "tag_search_clauses",
     # Validation
     "ValidationError",
     "ValidationErrors",

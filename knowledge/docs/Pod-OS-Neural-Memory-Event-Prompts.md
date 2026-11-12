@@ -161,7 +161,7 @@ New Tags are stored with the Event [StoreEvent Intent type] or as a batch of Tag
 - Frequency field (int) is used to track the number of instances of the Tag.
 - Key field: can be any alphanumeric value used to identify the Tag. Examples include: text (e.g., topic:quantum_mechanics), dense or sparse embedding vectors, hash, and pointers (e.g., actor@gateway:EVENTID).
 - Value field: can be any value as the Tag value. Examples include: text, dense or sparse embedding vector, hash, pointers or binary data.
-- Values are automatically versioned; by default the most recent is returned during retrieval.
+- Values are versioned: a later write of the same key appends a row. The default read is the latest value of each key. Prior rows remain and are returned with tag_format=1 (GetEvent) or buffer_format=1 (GetEventsForTags). Order is storage timestamp, then tag number.
 - There is no upper bound on the number of Tags an Event can have; however, the greater the number the slower the storage and retrieval latencies and therefore the maximum number of Tags is a tunable hyperparameter based on the use case and latency requirements.
 
 #### Example: StoreEvent with Tags (Python)

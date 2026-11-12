@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
 from uuid import uuid4
 
@@ -21,11 +22,18 @@ from pod_os_client.message.decoder import decode_message
 from pod_os_client.message.encoder import encode_message
 from pod_os_client.message.intents import IntentType
 from pod_os_client.message.tag_format import apply_tag_owner_output
-from pod_os_client.message.types import Message
+from pod_os_client.message.types import EventFields, Message, NeuralMemoryFields, Tag
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["Client", "ConnectionState"]
+__all__ = ["AppendResult", "Client", "ConnectionState"]
+
+
+@dataclass(slots=True)
+class AppendResult:
+    """Whether append_tags wrote a new tag version."""
+
+    wrote: bool
 
 
 class ConnectionState(Enum):
@@ -319,6 +327,46 @@ class Client:
             await conn.send(encoded)
 
         await self._pool.ping_idle_connections(ping)
+
+    async def append_tags(
+        self,
+        actor: str,
+        target_unique_id: str,
+        tags: list[Tag],
+    ) -> AppendResult:
+        """Write one StoreBatchTags of caller-named keys onto an existing event.
+
+        actor is the recipient routing identity (name@gateway). Every tag is sent
+        with frequency 1. The batch owner_unique_id is target_unique_id. A repeated
+        value is a new observation and is written.
+        """
+        if not actor:
+            raise ValueError("actor is required")
+        if not target_unique_id:
+            raise ValueError("target unique id is required")
+        if not tags:
+            raise ValueError("tags are required")
+
+        stored = [
+            Tag(
+                frequency=1,
+                key=tag.key,
+                value=tag.value,
+                timestamp=tag.timestamp,
+                id=tag.id,
+                owner=tag.owner,
+                owner_unique_id=tag.owner_unique_id,
+            )
+            for tag in tags
+        ]
+        await self.send_message(Message(
+            to=actor,
+            intent=IntentType.StoreBatchTags.name,
+            message_id=str(uuid4()),
+            event=EventFields(unique_id=target_unique_id, owner_unique_id=target_unique_id),
+            neural_memory=NeuralMemoryFields(tags=stored),
+        ))
+        return AppendResult(wrote=True)
 
     async def send_message(self, msg: Message) -> Message:
         """Send message and wait for response.

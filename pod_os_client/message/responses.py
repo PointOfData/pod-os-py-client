@@ -821,6 +821,9 @@ def _parse_get_event_link_tag_line(line: str) -> tuple[str, str, TagOutput | Non
         except ValueError:
             pass
 
+    if "timestamp" in record_map:
+        tag.timestamp = record_map["timestamp"]
+
     if "value" in record_map:
         value = record_map["value"]
         eq_idx = value.find("=")
@@ -851,6 +854,9 @@ def _parse_get_event_target_tag_line(line: str) -> tuple[str, TagOutput | None]:
             tag.frequency = int(record_map["freq"])
         except ValueError:
             pass
+
+    if "timestamp" in record_map:
+        tag.timestamp = record_map["timestamp"]
 
     if "value" in record_map:
         value = record_map["value"]
